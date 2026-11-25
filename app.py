@@ -157,6 +157,17 @@ def wl_chart(ser, name, title, unit, t0, cfg):
             if key == "forecast":
                 s = s + corr
             fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, line=dict(color=col, width=w)))
+    cats = (cfg.get("categories") or {}).get(name) or ((cfg.get("categories") or {}).get("Seattle_bay") if name == "SouthPark_PumpStation" else None)
+    if cats:
+        # NWS flood categories as shaded bands, AHPS colours; each band runs up to the next category
+        order = [(k, cats[k]) for k in ("action", "minor", "moderate", "major") if k in cats]
+        vis = [d[1] for key in ("observed", "catchup", "forecast") for d in ser.get(key, {}).get(name, []) if d[1] is not None]
+        top = (max(vis + [order[-1][1]]) + 0.6) * F if vis else order[-1][1] * F + 1
+        shade = {"action": "#f5d300", "minor": "#ff9d00", "moderate": "#ff2a00", "major": "#c800ff"}
+        for i, (k, v) in enumerate(order):
+            hi = order[i + 1][1] * F if i + 1 < len(order) else top
+            fig.add_hrect(y0=v * F, y1=hi, fillcolor=shade[k], opacity=0.14, line_width=0, layer="below",
+                          annotation_text=f"NWS {k} {v * F:.2f}", annotation_position="top left", annotation_font=dict(size=10, color=shade[k]))
     if name in ("USGS_12113415", "SouthPark_PumpStation"):
         for v, lab, col in ((cfg["minor_m"], "minor", C["minor"]), (cfg["major_m"], "major", C["major"])):
             fig.add_hline(y=v * F, line=dict(color=col, dash="dash", width=1.2), annotation_text=f"{lab} {v * F:.2f}", annotation_position="right")
