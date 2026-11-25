@@ -51,8 +51,8 @@ h1, h2 {{ letter-spacing: -0.02em; color: #1d1d1f; font-weight: 600; }} h1 {{ fo
 .bar {{ height: 6px; background: #e5e5ea; border-radius: 3px; overflow: hidden; margin-top: 6px; }} .bar > i {{ display: block; height: 100%; background: #0a84ff; border-radius: 3px; }}
 .tiles {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }} .tiles .card {{ margin: 0; }}
 @media (max-width: 900px) {{ .tiles {{ grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }} }}
-.steplist {{ margin-top: 6px; border-top: 1px solid #e5e5ea; padding-top: 5px; }}
-.steplist .sr {{ display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: #6e6e73; line-height: 1.5; font-variant-numeric: tabular-nums; }}
+.steplist {{ margin-top: 6px; border-top: 1px solid #e5e5ea; padding-top: 5px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 12px; }}
+.steplist .sr {{ display: flex; justify-content: space-between; gap: 6px; font-size: 11px; color: #6e6e73; line-height: 1.55; font-variant-numeric: tabular-nums; white-space: nowrap; }} .steplist .sr span:first-child {{ overflow: hidden; text-overflow: ellipsis; }} .steplist .sr span:first-child::first-letter {{ color: #34c759; }}
 .cycle-title {{ font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }} .cycle-sub {{ font-size: 12.5px; color: #6e6e73; }}
 /* phones and narrow windows: Streamlit already stacks columns below 640 px; tighten everything else */
 @media (max-width: 900px) {{ .steps {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
@@ -66,6 +66,7 @@ h1, h2 {{ letter-spacing: -0.02em; color: #1d1d1f; font-weight: 600; }} h1 {{ fo
   div[data-baseweb="tab"] {{ padding-left: 8px !important; padding-right: 8px !important; }}
   .stPlotlyChart {{ margin-left: -6px; margin-right: -6px; }}
 }}
+@media (max-width: 640px) {{ .steplist {{ grid-template-columns: 1fr; }} }}
 @media (max-width: 380px) {{ .steps {{ grid-template-columns: 1fr; }} }}
 div[data-testid="stSidebar"], div[data-testid="stSidebarCollapsedControl"], button[data-testid="stExpandSidebarButton"] {{ display: none; }}
 div[data-testid="stRadio"] label p, div[data-testid="stCheckbox"] label p {{ font-size: 13px; }}
@@ -146,16 +147,15 @@ def stepper(rec):
         if s.get("cpus") and key in ("an", "fc"):
             bits.append(f'{s["cpus"]} cores')
         if s.get("elapsed") and st_ in ("RUNNING", "COMPLETED", "FAILED", "TIMEOUT"):
-            bits.append(("running " if st_ == "RUNNING" else "took ") + s["elapsed"])
-        if s.get("node") and st_ in ("RUNNING", "COMPLETED"):
-            bits.append(s["node"])
+            bits.append(s["elapsed"])
         extra = f'<div class="s">{" · ".join(bits)}</div>' if bits else ""
         if st_ == "RUNNING" and s.get("pct") is not None:
             extra += f'<div class="bar"><i style="width:{s["pct"]:.0f}%"></i></div><div class="s">SFINCS {s["pct"]:.0f}%</div>'
         elif st_ == "PENDING":
-            extra += f'<div class="s">{"waiting for the previous stage" if s.get("reason") == "Dependency" else s.get("reason", "")}</div>'
+            if s.get("reason") not in (None, "", "Dependency", "None"):   # only say why when it is not just the previous stage
+                extra += f'<div class="s">{s["reason"]}</div>'
         if key == "prep" and s.get("steps"):
-            rows = "".join(f'<div class="sr"><span>{x["step"]}</span><span>{x["seconds"] // 60}:{x["seconds"] % 60:02d}</span></div>' for x in s["steps"])
+            rows = "".join(f'<div class="sr"><span>&#10003; {x["step"]}</span><span>{x["seconds"] // 60}:{x["seconds"] % 60:02d}</span></div>' for x in s["steps"])
             extra += f'<div class="steplist">{rows}</div>'
         cells.append(f'<div class="step"><div class="n">{label}</div><div class="t">{pill(st_)}</div>{extra}</div>')
     return f'<div class="steps">{"".join(cells)}</div>'
