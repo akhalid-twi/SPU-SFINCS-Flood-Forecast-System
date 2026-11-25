@@ -52,6 +52,8 @@ h1, h2 {{ letter-spacing: -0.02em; color: #1d1d1f; font-weight: 600; }} h1 {{ fo
 .cycle-title {{ font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }} .cycle-sub {{ font-size: 12.5px; color: #6e6e73; }}
 div[data-testid="stSidebar"], div[data-testid="stSidebarCollapsedControl"], button[data-testid="stExpandSidebarButton"] {{ display: none; }}
 div[data-testid="stRadio"] label p, div[data-testid="stCheckbox"] label p {{ font-size: 13px; }}
+.maplibregl-ctrl-attrib, .mapboxgl-ctrl-attrib {{ font-size: 9px !important; line-height: 1.2 !important; padding: 0 4px !important; opacity: .7; }}
+.maplibregl-ctrl-attrib-button, .mapboxgl-ctrl-attrib-button {{ transform: scale(.7); }}
 </style>""", unsafe_allow_html=True)
 
 
