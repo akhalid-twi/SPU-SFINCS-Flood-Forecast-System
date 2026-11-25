@@ -123,6 +123,62 @@ def fetch_csv(path):
     return pd.read_csv(StringIO(t)) if t else None
 
 
+# live observations, fetched by the app itself so the observed line keeps growing after the snapshot was made
+LIVE_OBS = {"Seattle_bay": ("coops", "9447130"), "USGS_12113415": ("usgs", "12113415"),
+            "USGS_12113390": ("usgs", "12113390"), "USGS_12113344": ("usgs", "12113344")}
+
+
+@st.cache_data(ttl=86400, show_spinner=False)
+def usgs_datum_ft(site: str) -> float:
+    """Gage datum [ft NAVD88] from the NWIS site record (0 for gauges that report NAVD88 elevations directly)."""
+    t = requests.get("https://waterservices.usgs.gov/nwis/site/", params=dict(format="rdb", sites=site, siteOutput="expanded"), timeout=30).text
+    rows = [ln.split("	") for ln in t.splitlines() if ln and not ln.startswith("#")]
+    rec = dict(zip(rows[0], rows[2]))
+    if rec.get("alt_datum_cd") != "NAVD88":
+        raise ValueError(f"USGS {site} datum not NAVD88")
+    return float(rec.get("alt_va") or 0)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def live_obs(name: str, t0: str, t1: str) -> pd.Series:
+    """Observed water level [m NAVD88] over [t0, t1] UTC from NOAA CO-OPS or USGS NWIS; empty on any failure."""
+    src = LIVE_OBS.get(name)
+    if not src:
+        return pd.Series(dtype=float)
+    a, b = pd.Timestamp(t0), pd.Timestamp(t1)
+    try:
+        if src[0] == "coops":
+            d = requests.get("https://api.tidesandcurrents.noaa.gov/api/prod/datagetter", timeout=30, params=dict(
+                product="water_level", datum="NAVD", units="metric", time_zone="gmt", format="json", application="spu_flood_dashboard",
+                station=src[1], begin_date=f"{a:%Y%m%d %H:%M}", end_date=f"{b:%Y%m%d %H:%M}")).json()
+            return pd.Series({pd.Timestamp(r["t"]): float(r["v"]) for r in d.get("data", []) if r.get("v") not in ("", None)}, dtype=float).sort_index()
+        datum = usgs_datum_ft(src[1])
+        d = requests.get("https://waterservices.usgs.gov/nwis/iv/", timeout=60, params=dict(
+            format="json", sites=src[1], parameterCd="00065", startDT=f"{a:%Y-%m-%dT%H:%MZ}", endDT=f"{b:%Y-%m-%dT%H:%MZ}")).json()
+        tsr = d["value"]["timeSeries"]
+        if not tsr:
+            return pd.Series(dtype=float)
+        nod = float(tsr[0]["variable"]["noDataValue"])
+        return pd.Series({pd.Timestamp(r["dateTime"]).tz_convert("UTC").tz_localize(None): (float(r["value"]) + datum) * 0.3048
+                          for r in tsr[0]["values"][0]["value"] if float(r["value"]) != nod}, dtype=float).sort_index()
+    except Exception:
+        return pd.Series(dtype=float)
+
+
+def observed_now(ser: dict, name: str, t0) -> pd.Series:
+    """Snapshot observations joined with live ones up to now (live wins where both exist)."""
+    snap = ts(ser.get("observed", {}).get(name))
+    starts = [ts(ser.get(k, {}).get(name)).index.min() for k in ("catchup", "forecast") if ser.get(k, {}).get(name)]
+    a = min([x for x in starts if pd.notna(x)] + [pd.Timestamp(t0) - pd.Timedelta(days=3)])
+    b = min(pd.Timestamp.utcnow().tz_localize(None), pd.Timestamp(t0) + pd.Timedelta(days=7)).floor("5min")
+    live = live_obs(name, str(a.floor("1h")), str(b))
+    if live.empty:
+        return snap
+    live = live.resample("15min").mean().dropna()
+    out = pd.concat([snap[snap.index < live.index.min()], live])
+    return out[~out.index.duplicated(keep="last")]
+
+
 def ts(points) -> pd.Series:
     if not points:
         return pd.Series(dtype=float)
@@ -177,10 +233,13 @@ def wl_chart(ser, name, title, unit, t0, cfg):
     F = FT if unit == "ft" else 1.0
     corr = ser.get("hwc", {}).get(name, 0.0)
     fig = go.Figure()
+    last_obs = None
     # observed solid in the back; nowcast and forecast dotted on top, so the overlap stays visible
     for key, label, col, w in (("observed", "Observed", C["obs"], 2.4), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.2)):
-        s = ts(ser.get(key, {}).get(name))
+        s = observed_now(ser, name, t0) if key == "observed" else ts(ser.get(key, {}).get(name))
         if len(s):
+            if key == "observed":
+                last_obs = s.index.max()
             if key == "forecast":
                 s = s + corr
             fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, line=dict(color=col, width=w, dash=None if key == "observed" else "dot"),
@@ -212,6 +271,9 @@ def wl_chart(ser, name, title, unit, t0, cfg):
             fig.add_hline(y=v * F, line=dict(color=col, width=1), opacity=0.6, annotation_text=f"{lab} {v * F:.2f} {unit}",
                           annotation_position=f"top {side}", annotation_font=dict(size=10.5, color=col))
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
+    if last_obs is not None:   # where the observations currently end
+        fig.add_annotation(x=last_obs, y=1.0, yref="paper", text=f"observed to {pd.Timestamp(last_obs).tz_localize('UTC').tz_convert(cfg['tz']):%a %H:%M}",
+                           showarrow=False, xanchor="right", yanchor="bottom", font=dict(size=10, color="#6e6e73"))
     fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=340,
                       margin=dict(l=10, r=70, t=78, b=10), paper_bgcolor="white",
                       plot_bgcolor="white", hovermode="x unified", legend=dict(orientation="h", y=1.08, yanchor="bottom", x=0, font=dict(size=12)),
@@ -331,7 +393,8 @@ with tab_fc:
         ser = fetch_json(f"cycles/{key}/series.json") or {}
         if not ser.get("forecast") and not ser.get("catchup"):
             st.info("No model output yet for this cycle.")
-        st.caption("Stations from the ocean upstream: Elliott Bay, the pump station, the South Park gauge, Tukwila, Kent. The map beside each chart shows where it sits.")
+        st.caption("Stations from the ocean upstream: Elliott Bay, the pump station, the South Park gauge, Tukwila, Kent. The map beside each chart shows where it sits. "
+                   "Observations are fetched live from NOAA and USGS every 5 minutes, so the observed line keeps extending past the forecast start.")
         g_all, dom = fetch_csv("gauges.csv"), fetch_json("domain.json")
         for name, title in STATIONS:
             if ser.get("forecast", {}).get(name) or ser.get("catchup", {}).get(name):
