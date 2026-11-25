@@ -153,7 +153,8 @@ def wl_chart(ser, name, title, unit, t0, cfg):
     F = FT if unit == "ft" else 1.0
     corr = ser.get("hwc", {}).get(name, 0.0)
     fig = go.Figure()
-    for key, label, col, w in (("observed", "Observed", C["obs"], 1.6), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.4)):
+    # observed last, on top, so its overlap with the model lines stays visible
+    for key, label, col, w in (("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.4), ("observed", "Observed", C["obs"], 1.6)):
         s = ts(ser.get(key, {}).get(name))
         if len(s):
             if key == "forecast":
