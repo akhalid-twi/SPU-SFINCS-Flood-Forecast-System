@@ -20,7 +20,7 @@ import requests
 import streamlit as st
 
 FT = 3.28084
-STAGES = [("prep", "Prepare"), ("an", "Catch-up"), ("fc", "Forecast"), ("pp", "Products")]
+STAGES = [("prep", "Prepare"), ("an", "Nowcast"), ("fc", "Forecast"), ("pp", "Products")]
 STATIONS = [("USGS_12113415", "Duwamish at South Park (USGS 12113415)"), ("SouthPark_PumpStation", "South Park pump station"),
             ("Seattle_bay", "Elliott Bay, Seattle (NOAA 9447130)"), ("USGS_12113390", "Duwamish at Golf Course, Tukwila (USGS 12113390)"),
             ("USGS_12113344", "Green River at 200th St, Kent (USGS 12113344)")]
@@ -148,7 +148,7 @@ def wl_chart(ser, name, title, unit, t0, cfg):
     F = FT if unit == "ft" else 1.0
     corr = ser.get("hwc", {}).get(name, 0.0)
     fig = go.Figure()
-    for key, label, col, w in (("observed", "Observed", C["obs"], 1.6), ("catchup", "Catch-up (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.4)):
+    for key, label, col, w in (("observed", "Observed", C["obs"], 1.6), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.4)):
         s = ts(ser.get(key, {}).get(name))
         if len(s):
             if key == "forecast":
@@ -178,7 +178,7 @@ def gauge_map(g, domain, skill, aoi):
         v = None if v is None or pd.isna(v) else float(v)
         col.append(C["gray"] if v is None else C["green"] if v < 0.10 else C["orange"] if v < 0.25 else C["red"])
         txt.append(f"<b>{r.label}</b><br>{str(r.source).upper()} · {'NAVD88' if r.datum == 'navd88' else 'local datum' if r.scored else 'output point'}"
-                   + ("" if v is None else f"<br>RMSE {v * 100:.1f} cm (catch-up)"))
+                   + ("" if v is None else f"<br>RMSE {v * 100:.1f} cm (nowcast)"))
     fig = go.Figure()
     if domain:
         lon, lat = zip(*domain)
@@ -269,7 +269,7 @@ with tab_fc:
                 if pk is not None:
                     st.dataframe(pk, hide_index=True, width="stretch")
             with c2:
-                st.markdown("## Gauge skill (catch-up)")
+                st.markdown("## Gauge skill (nowcast)")
                 sa = fetch_csv(f"cycles/{key}/skill_analysis.csv")
                 if sa is None:
                     st.caption("Scored once the products job of this cycle has run.")
@@ -286,7 +286,7 @@ with tab_map:
     if g is not None:
         sa = fetch_csv(f"cycles/{pd.Timestamp(sel):%Y%m%dT%H}/skill_analysis.csv") if sel else None
         st.markdown("## Stations and gauges")
-        st.caption("Gauges coloured by catch-up RMSE of the selected cycle: green under 10 cm, orange 10–25 cm, red over 25 cm, grey not scored yet. "
+        st.caption("Gauges coloured by nowcast RMSE of the selected cycle: green under 10 cm, orange 10–25 cm, red over 25 cm, grey not scored yet. "
                    "Small dots are output-only points around the pump station.")
         st.plotly_chart(gauge_map(g, fetch_json("domain.json"), sa, cfg.get("aoi")), width="stretch", config=dict(displaylogo=False))
         st.dataframe(g[g.scored.astype(str).str.lower() == "true"][["name", "label", "source", "datum"]], hide_index=True, width="stretch")
@@ -295,7 +295,7 @@ with tab_jobs:
     st.markdown("## Slurm queue")
     q = pd.DataFrame(status.get("queue", []))
     if len(q):
-        what = {"prep": "download forcing, prepare runs", "an": "catch-up run (observed forcing)", "fc": "7-day forecast run", "pp": "skill, 2 m map, report"}
+        what = {"prep": "download forcing, prepare runs", "an": "nowcast run (observed forcing)", "fc": "7-day forecast run", "pp": "skill, 2 m map, report"}
         q["task"] = q.name.str.extract(r"cyc_(\w+?)_")[0].map(what)
         st.dataframe(q[["job", "name", "task", "state", "elapsed", "node", "cpus", "reason"]], hide_index=True, width="stretch")
     else:
@@ -303,7 +303,7 @@ with tab_jobs:
     if sel:
         st.markdown(f"## Logs · {pd.Timestamp(sel):%Y-%m-%d %H}z")
         logs = fetch_json(f"cycles/{pd.Timestamp(sel):%Y%m%dT%H}/logs.json") or {}
-        groups = [k for k in ("Preparation", "Catch-up SFINCS", "Forecast SFINCS", "Products") if logs.get(k)]
+        groups = [k for k in ("Preparation", "Nowcast SFINCS", "Forecast SFINCS", "Products") if logs.get(k)]
         if groups:
             which = st.radio("Log", groups, horizontal=True, label_visibility="collapsed")
             for fname, text in logs[which].items():
