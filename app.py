@@ -153,13 +153,13 @@ def wl_chart(ser, name, title, unit, t0, cfg):
     F = FT if unit == "ft" else 1.0
     corr = ser.get("hwc", {}).get(name, 0.0)
     fig = go.Figure()
-    # observed solid in the back; nowcast and forecast dashed on top, so the overlap stays visible
+    # observed solid in the back; nowcast and forecast dotted on top, so the overlap stays visible
     for key, label, col, w in (("observed", "Observed", C["obs"], 2.4), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.2)):
         s = ts(ser.get(key, {}).get(name))
         if len(s):
             if key == "forecast":
                 s = s + corr
-            fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, line=dict(color=col, width=w, dash=None if key == "observed" else "dash"),
+            fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, line=dict(color=col, width=w, dash=None if key == "observed" else "dot"),
                                      opacity=0.55 if key == "observed" else 1))
     # thresholds as shaded bands (AHPS style): each band runs from its level up to the next one, the top one to the chart top.
     # Seattle: the NWS categories from NWPS. South Park and the pump station: the project's minor/major levels and the
