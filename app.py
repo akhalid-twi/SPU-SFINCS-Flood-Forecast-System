@@ -53,7 +53,11 @@ div[data-testid="stRadio"] label p, div[data-testid="stCheckbox"] label p {{ fon
 
 
 # ------------------------------------------------------------------ snapshot access
+DEFAULT_URL = "https://raw.githubusercontent.com/akhalid-twi/SPU-SFINCS-Flood-Forecast-System/data"
+
+
 def _source() -> tuple[str | None, Path | None]:
+    """Snapshot location: secret/env URL, else a local folder that has a snapshot, else the public data branch."""
     url = None
     try:
         url = st.secrets.get("data_url")
@@ -63,7 +67,9 @@ def _source() -> tuple[str | None, Path | None]:
     if url:
         return url.rstrip("/"), None
     d = Path(os.environ.get("SPU_DATA_DIR") or Path(__file__).resolve().parents[1] / "public")
-    return None, d
+    if (d / "status.json").exists():
+        return None, d
+    return DEFAULT_URL, None
 
 
 URL, DIR = _source()
@@ -193,7 +199,7 @@ def gauge_map(g, domain, skill, aoi):
 status = fetch_json("status.json")
 if not status:
     st.title("South Park flood forecast")
-    st.warning(f"No snapshot found at {URL or DIR}. On Rougarou run `python dashboard/publish.py`.")
+    st.warning(f"No snapshot found at {URL or DIR}. The cluster publishes one every 5 minutes; try again shortly.")
     st.stop()
 cfg, recs, tz = status["config"], status["cycles"], status["config"]["tz"]
 F = lambda u: FT if u == "ft" else 1.0
