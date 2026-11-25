@@ -1,0 +1,114 @@
+name,source,datum,label,scored,lon,lat
+COOPS_9447130,coops,navd88,Seattle tide gauge (NOAA 9447130),True,-122.34013588501809,47.60221014104737
+USGS_12100490,usgs,navd88,"White River At R Street Near Auburn, Wa",True,-122.20787567478595,47.27479529815079
+USGS_12100494,usgs,local,"White River At Roegner Park Near Auburn, Wa",True,-122.22011987957809,47.27121153655518
+USGS_12108500,usgs,local,"Newaukum Creek Near Black Diamond, Wa",True,-122.0595585182082,47.27565638843694
+USGS_12108800,usgs,navd88,"Green River Below Crisp Creek Nr Black Diamond, Wa",True,-122.08288839340476,47.284833098076206
+USGS_12112600,usgs,navd88,"Big Soos Creek Above Hatchery Near Auburn, Wa",True,-122.16539568887865,47.31232294696313
+USGS_12113000,usgs,local,"Green River Near Auburn, Wa",True,-122.20400866073928,47.312323194219815
+USGS_12113150,usgs,navd88,"Green River Above S 277Th St At Kent, Wa",True,-122.20845571582434,47.353411471788654
+USGS_12113310,usgs,navd88,"Green River Below Meeker St At Kent, Wa",True,-122.26880538814267,47.37886076989264
+USGS_12113344,usgs,navd88,"Green River At 200Th Street At Kent, Wa",True,-122.26539985514974,47.422877948297874
+USGS_12113346,usgs,navd88,"Springbrook Creek At Orillia, Wa",True,-122.22762105936809,47.43121118958743
+USGS_12113347,usgs,local,"Mill Creek At Earthworks Park At Kent, Wa",True,-122.2248428850323,47.38315560492847
+USGS_12113349,usgs,navd88,"Mill Creek Near Mouth At Orillia, Wa",True,-122.24317712191228,47.430100187255334
+USGS_12113350,usgs,local,"Green River At Tukwila, Wa",True,-122.24845491602102,47.465099811759835
+USGS_12113390,usgs,navd88,"Duwamish River At Golf Course At Tukwila, Wa",True,-122.25873300624376,47.478985976640836
+USGS_12113415,usgs,navd88,"Duwamish R At E Marginal Way Br At Duwamish, Wa",True,-122.28814112799712,47.5005057994069
+KC_11c,kc_hic,local,Des Moines Creek above Tyee Regional Pond (King County 11c),True,-122.30457999999999,47.42979999999999
+KC_11f,kc_hic,local,Des Moines Tributary 0377 at Tyee Weir (King County 11f),True,-122.3057,47.42381999999999
+KC_11g,kc_hic,local,NW Ponds Outlet Des Moines CR 0379 (King County 11g),True,-122.31127800000002,47.427102999999995
+KC_11h,kc_hic,local,Bow Lake (King County 11h),True,-122.29488,47.43714
+KC_40d,kc_hic,local,Crisp Creek at Green River RD (King County 40d),True,-122.06671000000001,47.28902999999999
+KC_42b,kc_hic,local,Miller Creek Detention Facility (King County 42b),True,-122.31803,47.46751
+KC_54h,kc_hic,local,Soosette Creek Above SR 18 (King County 54h),True,-122.1562,47.3329
+KC_03G,kc_hic,local,Springbrook Creek at Grady Way (King County 03G),True,-122.2343611,47.468083329999985
+KC_SPU_STA098A,kc_hic,local,Longfellow Creek (26TH Ave SW & SW Oregon Street) Seattle Public Utilities site (King County SPU_STA098A),True,-122.36696,47.56257999999999
+KC_SPU_STA099,kc_hic,local,Longfellow Creek (24TH Ave SW & SW Willow Street) Seattle Public Utilities site (King County SPU_STA099),True,-122.36285,47.541439999999994
+SP_pump_station,point,,South Park Pump Station (640 S Riverside Dr),False,-122.32584899999999,47.534745
+SP_5th_Fontanelle,point,,5th Ave S & S Fontanelle St (flooded Dec 2023),False,-122.32816300000002,47.53665199999999
+SP_2nd_Webster,point,,2nd Ave S & S Webster St (inlet at 2nd),False,-122.331309,47.535596
+SP_5th_Kenyon,point,,5th Ave S & S Kenyon St,False,-122.33088400000001,47.531946
+SP_14th_Cloverdale,point,,14th Ave S & S Cloverdale St (central South Park),False,-122.31489900000001,47.52644099999999
+SP_waterway_park,point,,Duwamish Waterway Park,False,-122.31948,47.531271
+SP_bridge,point,,South Park Bridge (14th/16th Ave S),False,-122.31340000000002,47.529
+SP_grid_Em400_Nm400,point,,"South Park grid, -400 m east, -400 m north of the pump station",False,-122.331209,47.531177
+SP_grid_Em400_Nm300,point,,"South Park grid, -400 m east, -300 m north of the pump station",False,-122.331198,47.532076999999994
+SP_grid_Em400_Nm200,point,,"South Park grid, -400 m east, -200 m north of the pump station",False,-122.331186,47.532976999999995
+SP_grid_Em400_Nm100,point,,"South Park grid, -400 m east, -100 m north of the pump station",False,-122.33117500000002,47.53387600000001
+SP_grid_Em400_Np0,point,,"South Park grid, -400 m east, +0 m north of the pump station",False,-122.33116300000002,47.53477600000001
+SP_grid_Em400_Np100,point,,"South Park grid, -400 m east, +100 m north of the pump station",False,-122.331152,47.53567599999999
+SP_grid_Em400_Np200,point,,"South Park grid, -400 m east, +200 m north of the pump station",False,-122.33114,47.536576
+SP_grid_Em400_Np300,point,,"South Park grid, -400 m east, +300 m north of the pump station",False,-122.331129,47.537475
+SP_grid_Em400_Np400,point,,"South Park grid, -400 m east, +400 m north of the pump station",False,-122.33111800000002,47.538375
+SP_grid_Em300_Nm400,point,,"South Park grid, -300 m east, -400 m north of the pump station",False,-122.32988100000001,47.53116899999999
+SP_grid_Em300_Nm300,point,,"South Park grid, -300 m east, -300 m north of the pump station",False,-122.32986900000002,47.53206900000001
+SP_grid_Em300_Nm200,point,,"South Park grid, -300 m east, -200 m north of the pump station",False,-122.329858,47.532969
+SP_grid_Em300_Nm100,point,,"South Park grid, -300 m east, -100 m north of the pump station",False,-122.329846,47.533869
+SP_grid_Em300_Np0,point,,"South Park grid, -300 m east, +0 m north of the pump station",False,-122.329835,47.53476799999999
+SP_grid_Em300_Np100,point,,"South Park grid, -300 m east, +100 m north of the pump station",False,-122.329823,47.535668
+SP_grid_Em300_Np200,point,,"South Park grid, -300 m east, +200 m north of the pump station",False,-122.32981200000002,47.536567999999995
+SP_grid_Em300_Np300,point,,"South Park grid, -300 m east, +300 m north of the pump station",False,-122.32979999999999,47.53746799999999
+SP_grid_Em300_Np400,point,,"South Park grid, -300 m east, +400 m north of the pump station",False,-122.329789,47.538367
+SP_grid_Em200_Nm400,point,,"South Park grid, -200 m east, -400 m north of the pump station",False,-122.328552,47.531162
+SP_grid_Em200_Nm300,point,,"South Park grid, -200 m east, -300 m north of the pump station",False,-122.328541,47.532061
+SP_grid_Em200_Nm200,point,,"South Park grid, -200 m east, -200 m north of the pump station",False,-122.328529,47.53296099999999
+SP_grid_Em200_Nm100,point,,"South Park grid, -200 m east, -100 m north of the pump station",False,-122.32851800000002,47.533860999999995
+SP_grid_Em200_Np0,point,,"South Park grid, -200 m east, +0 m north of the pump station",False,-122.32850599999999,47.53476100000001
+SP_grid_Em200_Np100,point,,"South Park grid, -200 m east, +100 m north of the pump station",False,-122.328495,47.53566000000001
+SP_grid_Em200_Np200,point,,"South Park grid, -200 m east, +200 m north of the pump station",False,-122.328483,47.53656000000001
+SP_grid_Em200_Np300,point,,"South Park grid, -200 m east, +300 m north of the pump station",False,-122.32847200000002,47.537459999999996
+SP_grid_Em200_Np400,point,,"South Park grid, -200 m east, +400 m north of the pump station",False,-122.32846000000002,47.53835999999999
+SP_grid_Em100_Nm400,point,,"South Park grid, -100 m east, -400 m north of the pump station",False,-122.32722400000002,47.531153999999994
+SP_grid_Em100_Nm300,point,,"South Park grid, -100 m east, -300 m north of the pump station",False,-122.32721199999999,47.53205400000001
+SP_grid_Em100_Nm200,point,,"South Park grid, -100 m east, -200 m north of the pump station",False,-122.327201,47.532953000000006
+SP_grid_Em100_Nm100,point,,"South Park grid, -100 m east, -100 m north of the pump station",False,-122.327189,47.533853
+SP_grid_Em100_Np0,point,,"South Park grid, -100 m east, +0 m north of the pump station",False,-122.32717800000002,47.534752999999995
+SP_grid_Em100_Np100,point,,"South Park grid, -100 m east, +100 m north of the pump station",False,-122.32716600000002,47.535653
+SP_grid_Em100_Np200,point,,"South Park grid, -100 m east, +200 m north of the pump station",False,-122.32715499999999,47.536552
+SP_grid_Em100_Np300,point,,"South Park grid, -100 m east, +300 m north of the pump station",False,-122.32714299999999,47.537452
+SP_grid_Em100_Np400,point,,"South Park grid, -100 m east, +400 m north of the pump station",False,-122.327132,47.538351999999996
+SP_grid_Ep0_Nm400,point,,"South Park grid, +0 m east, -400 m north of the pump station",False,-122.325895,47.53114600000001
+SP_grid_Ep0_Nm300,point,,"South Park grid, +0 m east, -300 m north of the pump station",False,-122.325884,47.532046
+SP_grid_Ep0_Nm200,point,,"South Park grid, +0 m east, -200 m north of the pump station",False,-122.32587200000002,47.532946
+SP_grid_Ep0_Nm100,point,,"South Park grid, +0 m east, -100 m north of the pump station",False,-122.32586099999999,47.53384499999999
+SP_grid_Ep0_Np100,point,,"South Park grid, +0 m east, +100 m north of the pump station",False,-122.325837,47.535644999999995
+SP_grid_Ep0_Np200,point,,"South Park grid, +0 m east, +200 m north of the pump station",False,-122.325826,47.536544000000006
+SP_grid_Ep0_Np300,point,,"South Park grid, +0 m east, +300 m north of the pump station",False,-122.32581399999998,47.537443999999994
+SP_grid_Ep0_Np400,point,,"South Park grid, +0 m east, +400 m north of the pump station",False,-122.325803,47.538343999999995
+SP_grid_Ep100_Nm400,point,,"South Park grid, +100 m east, -400 m north of the pump station",False,-122.32456699999999,47.531138
+SP_grid_Ep100_Nm300,point,,"South Park grid, +100 m east, -300 m north of the pump station",False,-122.32455499999999,47.532038
+SP_grid_Ep100_Nm200,point,,"South Park grid, +100 m east, -200 m north of the pump station",False,-122.324544,47.53293800000001
+SP_grid_Ep100_Nm100,point,,"South Park grid, +100 m east, -100 m north of the pump station",False,-122.324532,47.533837
+SP_grid_Ep100_Np0,point,,"South Park grid, +100 m east, +0 m north of the pump station",False,-122.32452,47.534737
+SP_grid_Ep100_Np100,point,,"South Park grid, +100 m east, +100 m north of the pump station",False,-122.32450900000002,47.535636999999994
+SP_grid_Ep100_Np200,point,,"South Park grid, +100 m east, +200 m north of the pump station",False,-122.324497,47.536537
+SP_grid_Ep100_Np300,point,,"South Park grid, +100 m east, +300 m north of the pump station",False,-122.32448600000001,47.53743599999999
+SP_grid_Ep100_Np400,point,,"South Park grid, +100 m east, +400 m north of the pump station",False,-122.32447400000001,47.538335999999994
+SP_grid_Ep200_Nm400,point,,"South Park grid, +200 m east, -400 m north of the pump station",False,-122.323238,47.53112999999999
+SP_grid_Ep200_Nm300,point,,"South Park grid, +200 m east, -300 m north of the pump station",False,-122.32322700000002,47.53203
+SP_grid_Ep200_Nm200,point,,"South Park grid, +200 m east, -200 m north of the pump station",False,-122.32321500000002,47.53292999999999
+SP_grid_Ep200_Nm100,point,,"South Park grid, +200 m east, -100 m north of the pump station",False,-122.32320300000002,47.53383
+SP_grid_Ep200_Np0,point,,"South Park grid, +200 m east, +0 m north of the pump station",False,-122.323192,47.534729
+SP_grid_Ep200_Np100,point,,"South Park grid, +200 m east, +100 m north of the pump station",False,-122.32318000000001,47.535629
+SP_grid_Ep200_Np200,point,,"South Park grid, +200 m east, +200 m north of the pump station",False,-122.32316899999998,47.536528999999994
+SP_grid_Ep200_Np300,point,,"South Park grid, +200 m east, +300 m north of the pump station",False,-122.323157,47.537429
+SP_grid_Ep200_Np400,point,,"South Park grid, +200 m east, +400 m north of the pump station",False,-122.323146,47.538328
+SP_grid_Ep300_Nm400,point,,"South Park grid, +300 m east, -400 m north of the pump station",False,-122.32190999999999,47.53112299999999
+SP_grid_Ep300_Nm300,point,,"South Park grid, +300 m east, -300 m north of the pump station",False,-122.321898,47.53202199999999
+SP_grid_Ep300_Nm200,point,,"South Park grid, +300 m east, -200 m north of the pump station",False,-122.321886,47.532922
+SP_grid_Ep300_Nm100,point,,"South Park grid, +300 m east, -100 m north of the pump station",False,-122.321875,47.533822
+SP_grid_Ep300_Np0,point,,"South Park grid, +300 m east, +0 m north of the pump station",False,-122.321863,47.534722
+SP_grid_Ep300_Np100,point,,"South Park grid, +300 m east, +100 m north of the pump station",False,-122.32185200000002,47.53562099999999
+SP_grid_Ep300_Np200,point,,"South Park grid, +300 m east, +200 m north of the pump station",False,-122.32184,47.536521
+SP_grid_Ep300_Np300,point,,"South Park grid, +300 m east, +300 m north of the pump station",False,-122.321828,47.53742099999999
+SP_grid_Ep300_Np400,point,,"South Park grid, +300 m east, +400 m north of the pump station",False,-122.32181700000001,47.53832
+SP_grid_Ep400_Nm400,point,,"South Park grid, +400 m east, -400 m north of the pump station",False,-122.320581,47.53111499999999
+SP_grid_Ep400_Nm300,point,,"South Park grid, +400 m east, -300 m north of the pump station",False,-122.32057000000002,47.53201399999999
+SP_grid_Ep400_Nm200,point,,"South Park grid, +400 m east, -200 m north of the pump station",False,-122.32055800000002,47.532913999999984
+SP_grid_Ep400_Nm100,point,,"South Park grid, +400 m east, -100 m north of the pump station",False,-122.320546,47.533814
+SP_grid_Ep400_Np0,point,,"South Park grid, +400 m east, +0 m north of the pump station",False,-122.320535,47.53471400000001
+SP_grid_Ep400_Np100,point,,"South Park grid, +400 m east, +100 m north of the pump station",False,-122.32052300000001,47.53561299999999
+SP_grid_Ep400_Np200,point,,"South Park grid, +400 m east, +200 m north of the pump station",False,-122.32051100000001,47.53651299999999
+SP_grid_Ep400_Np300,point,,"South Park grid, +400 m east, +300 m north of the pump station",False,-122.3205,47.53741300000001
+SP_grid_Ep400_Np400,point,,"South Park grid, +400 m east, +400 m north of the pump station",False,-122.320488,47.538313
