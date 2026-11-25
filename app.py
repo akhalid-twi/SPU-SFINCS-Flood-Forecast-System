@@ -177,12 +177,13 @@ def wl_chart(ser, name, title, unit, t0, cfg):
         top = (max(vis + [bands[-1][1]]) + 0.6) * F
         low = (min(vis) if vis else bands[0][1] - 1) * F
         close = 0.07 * (top - low)          # labels closer than ~7% of the chart height would overlap
-        side, prev = "left", None
+        last = {"left": -1e9, "right": -1e9}   # last label height on each side
         for i, (lab, v) in enumerate(bands):
             hi = bands[i + 1][1] * F if i + 1 < len(bands) else top
             col = shade.get(lab.replace("NWS ", ""), "#ff9d00")
-            side = ("right" if side == "left" else "left") if prev is not None and v * F - prev < close else "left"
-            prev = v * F
+            # left unless that would sit too close to the last left label; then whichever side has more room
+            side = "left" if v * F - last["left"] >= close else max(last, key=lambda k: v * F - last[k])
+            last[side] = v * F
             fig.add_hrect(y0=v * F, y1=hi, fillcolor=col, opacity=0.16 if "major" in lab else 0.14, line_width=0, layer="below")
             fig.add_hline(y=v * F, line=dict(color=col, width=1), opacity=0.6, annotation_text=f"{lab} {v * F:.2f} {unit}",
                           annotation_position=f"top {side}", annotation_font=dict(size=10.5, color=col))
