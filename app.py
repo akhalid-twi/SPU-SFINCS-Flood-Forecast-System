@@ -220,7 +220,7 @@ with c_btn:
         st.rerun()
 st.caption(f"Cycles at {', '.join(f'{h:02d}z' for h in cfg['hours'])} UTC · thresholds at USGS 12113415: minor {cfg['minor_m'] * FT:.2f} ft, "
            f"major {cfg['major_m'] * FT:.2f} ft NAVD88 · snapshot {local(status['updated'], tz)}")
-tab_over, tab_fc, tab_map, tab_jobs = st.tabs(["Overview", "Forecast", "Stations", "Jobs & logs"])
+tab_over, tab_fc, tab_map, tab_jobs, tab_about = st.tabs(["Overview", "Forecast", "Stations", "Jobs & logs", "About"])
 
 with tab_over:
     if not recs:
@@ -314,6 +314,37 @@ with tab_jobs:
         if logs.get("run.json"):
             with st.expander("Forecast inputs (run.json)"):
                 st.json(logs["run.json"])
+
+with tab_about:
+    st.markdown("## What this is")
+    st.markdown("A compound-flood forecast for South Park on the Duwamish River in Seattle, run for Seattle Public Utilities by The Water Institute. "
+                "The model is SFINCS, a fast hydrodynamic model of the lower Duwamish and Green River from Elliott Bay to Auburn, on cells of 12.5 to 50 m "
+                "with 2 m terrain detail inside each cell. It is driven by the ocean, the rivers and the weather, and it predicts water levels along the river "
+                "and over the land for the next 7 days. Water levels are in feet or metres above NAVD88.")
+    c1, c2 = st.columns(2)
+    with c1:
+        card('<div class="k" style="color:#2b6f7c;font-weight:600">NOWCAST</div><div style="margin-top:6px">The model run <b>up to now</b> with what was actually observed: '
+             'NOAA tide gauges at Seattle and Tacoma for the ocean, gauged river flows, and the hourly HRRR weather analyses. It brings the model state up to the cycle time and shows how '
+             'well the model reproduces the last days (its skill under perfect forcing). In the charts it is the <span style="color:#5ac8fa;font-weight:600">teal</span> line, ending at the cycle time.</div>')
+    with c2:
+        card('<div class="k" style="color:#c85a17;font-weight:600">FORECAST</div><div style="margin-top:6px">The model run <b>7 days ahead</b> from the end state of the nowcast, driven by forecasts: '
+             'NOAA STOFS ocean levels (tide plus surge, corrected against the gauges), the Northwest River Forecast Center flow for the Green River, rain-based estimates for the Black River, '
+             'and HRRR (first 48 h) then GFS weather: wind, pressure and rain. In the charts it is the <span style="color:#ff9f0a;font-weight:600">orange</span> line, starting at the cycle time. '
+             'The South Park forecast includes a +3.9 cm high-water correction from the model calibration.</div>')
+    st.markdown("## A forecast cycle")
+    st.markdown("Cycles are named after the NOAA model cycle time they use, 00z and 12z (UTC). NOAA posts the ocean forecast about 5 to 6 hours after that time, so the "
+                "cycle then runs in four stages, shown on the Overview: **Prepare** (download all inputs, build the two runs), **Nowcast** (10 min, or up to an hour after a cold start), "
+                "**Forecast** (3 to 4 hours), **Products** (gauge skill, 2 m flood map, report). Each cycle's nowcast continues from the previous one, so the model state carries forward "
+                "from cycle to cycle. Products for the 00z cycle are ready around 10 to 11 UTC (2 to 3 am Pacific); for 12z around 10 to 11 pm UTC.")
+    st.markdown("## Reading the charts")
+    st.markdown("Black is observed. Where an older cycle's orange line overlaps the black line, the gap is forecast error at that lead time; the gap between teal and black is the model's own error. "
+                "Dashed lines at South Park are the minor and major flood levels at USGS gauge 12113415 and, in purple, the gate level at which streets flooded in the SPU pump-station log (11.6 ft). "
+                "The 2 m flood map in each cycle's report shows where the forecast maximum water level stands above the ground around the pump station: blue from the river and bay, green where rain ponds higher than the river could reach.")
+    st.markdown("## Where the numbers come from")
+    st.markdown("Ocean: NOAA STOFS-2D-Global and CO-OPS gauges 9447130 (Seattle), 9446484 (Tacoma). Rivers: NWS/NWRFC forecast point AUBW1 (Green River near Auburn), USGS 12113344 (Kent), "
+                "12113346 (Springbrook Creek), King County gauges 03G, 03u, 03V. Weather: NOAA HRRR and GFS. Skill: 26 USGS, NOAA and King County gauges inside the model domain (Stations tab). "
+                "The system runs on The Water Institute's Rougarou cluster; this page reads a snapshot it publishes every 5 minutes, so it is 5 to 10 minutes behind.")
+    st.caption("Experimental guidance, not an official flood warning. For warnings see the National Weather Service Seattle office.")
 
 if auto:
     time.sleep(60)
