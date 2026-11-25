@@ -45,13 +45,28 @@ h1, h2 {{ letter-spacing: -0.02em; color: #1d1d1f; font-weight: 600; }} h1 {{ fo
 .s {{ font-size: 12px; color: #86868b; }}
 .pill {{ display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 500; }}
 .dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }}
-.steps {{ display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }}
+.steps {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }}
 .step {{ background: #f5f5f7; border-radius: 12px; padding: 10px 12px; min-height: 64px; }}
 .step .n {{ font-size: 12px; color: #6e6e73; }} .step .t {{ margin: 3px 0 4px; }}
 .bar {{ height: 6px; background: #e5e5ea; border-radius: 3px; overflow: hidden; margin-top: 6px; }} .bar > i {{ display: block; height: 100%; background: #0a84ff; border-radius: 3px; }}
+.tiles {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }} .tiles .card {{ margin: 0; }}
+@media (max-width: 900px) {{ .tiles {{ grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }} }}
 .steplist {{ margin-top: 6px; border-top: 1px solid #e5e5ea; padding-top: 5px; }}
 .steplist .sr {{ display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: #6e6e73; line-height: 1.5; font-variant-numeric: tabular-nums; }}
 .cycle-title {{ font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }} .cycle-sub {{ font-size: 12.5px; color: #6e6e73; }}
+/* phones and narrow windows: Streamlit already stacks columns below 640 px; tighten everything else */
+@media (max-width: 900px) {{ .steps {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+@media (max-width: 640px) {{
+  .block-container {{ padding: 3.4rem 0.9rem 2rem !important; }}
+  h1 {{ font-size: 23px !important; line-height: 1.15; }} h2 {{ font-size: 17px !important; }}
+  .card {{ padding: 12px 14px; border-radius: 14px; }}
+  .v {{ font-size: 24px; }} .cycle-title {{ font-size: 15px; }} .cycle-sub {{ font-size: 12px; }}
+  .step {{ padding: 8px 10px; min-height: 0; }}
+  div[data-baseweb="tab-list"] {{ overflow-x: auto; scrollbar-width: none; }}
+  div[data-baseweb="tab"] {{ padding-left: 8px !important; padding-right: 8px !important; }}
+  .stPlotlyChart {{ margin-left: -6px; margin-right: -6px; }}
+}}
+@media (max-width: 380px) {{ .steps {{ grid-template-columns: 1fr; }} }}
 div[data-testid="stSidebar"], div[data-testid="stSidebarCollapsedControl"], button[data-testid="stExpandSidebarButton"] {{ display: none; }}
 div[data-testid="stRadio"] label p, div[data-testid="stCheckbox"] label p {{ font-size: 13px; }}
 .maplibregl-ctrl-attrib, .mapboxgl-ctrl-attrib {{ font-size: 9px !important; line-height: 1.2 !important; padding: 0 4px !important; opacity: .7; }}
@@ -223,7 +238,7 @@ def station_map(g, domain, name):
         center = dict(lat=float(row.lat.iloc[0]), lon=float(row.lon.iloc[0]))
     else:
         center = dict(lat=47.50, lon=-122.28)
-    fig.update_layout(**{MAPKEY: dict(style="carto-positron", center=center, zoom=9.6)}, height=340, margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
+    fig.update_layout(**{MAPKEY: dict(style="carto-positron", center=center, zoom=9.6)}, height=300, margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
     return fig
 
 
@@ -266,17 +281,17 @@ F = lambda u: FT if u == "ft" else 1.0
 st.markdown("# SPU Flood Forecast System")
 st.markdown(f'<div class="cycle-sub">South Park, Duwamish River, Seattle · SFINCS compound flood model · data as of {local(status["updated"], tz)}</div>', unsafe_allow_html=True)
 # controls in a row under the title (no sidebar)
-c_sel, c_unit, c_auto, c_btn = st.columns([3.2, 1.1, 1.3, 1.1], vertical_alignment="bottom")
+c_sel, c_ctl = st.columns([3.2, 3.5], vertical_alignment="bottom")
 with c_sel:
     sel = st.selectbox("Cycle", [r["t0"] for r in recs], format_func=lambda t: f"{pd.Timestamp(t):%a %b %d, %H}z · {local(t, tz)}") if recs else None
-with c_unit:
-    unit = st.radio("Units", ["ft", "m"], horizontal=True)
-with c_auto:
-    auto = st.toggle("Auto-refresh (60 s)", value=os.environ.get("SPU_NO_AUTO") != "1")
-with c_btn:
-    if st.button("Refresh now", width="stretch"):
-        st.cache_data.clear()
-        st.rerun()
+with c_ctl:
+    # one row that wraps on a phone instead of stacking
+    with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
+        unit = st.radio("Units", ["ft", "m"], horizontal=True, label_visibility="collapsed")
+        auto = st.toggle("Auto-refresh", value=os.environ.get("SPU_NO_AUTO") != "1", help="Reload the data every 60 s")
+        if st.button("Refresh now"):
+            st.cache_data.clear()
+            st.rerun()
 st.caption(f"Cycles at {', '.join(f'{h:02d}z' for h in cfg['hours'])} UTC · thresholds at USGS 12113415: minor {cfg['minor_m'] * FT:.2f} ft, "
            f"major {cfg['major_m'] * FT:.2f} ft NAVD88 · snapshot {local(status['updated'], tz)}")
 tab_over, tab_fc, tab_map, tab_jobs, tab_about = st.tabs(["Overview", "Forecast", "Stations", "Jobs & logs", "About"])
@@ -297,9 +312,8 @@ with tab_over:
                     ("Cycles", f"{len(recs)}", f"{sum(1 for r in recs if r.get('has_products'))} with products")]
         else:
             vals = [("Latest forecast", "running", "no products yet"), ("Peak at South Park", "—", ""), ("Flood class", "—", ""), ("Cycles", f"{len(recs)}", "")]
-        for c, (k, v, s) in zip(st.columns(4), vals):
-            with c:
-                card(metric(k, v, s))
+        # one wrapping grid: four across on a desktop, two across on a phone
+        st.markdown('<div class="tiles">' + "".join(f'<div class="card tile">{metric(k, v, s)}</div>' for k, v, s in vals) + '</div>', unsafe_allow_html=True)
         st.markdown("## Cycles")
         for r in recs:
             row = r.get("row", {})
