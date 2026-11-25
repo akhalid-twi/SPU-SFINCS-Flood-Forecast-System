@@ -21,9 +21,12 @@ import streamlit as st
 
 FT = 3.28084
 STAGES = [("prep", "Prepare"), ("an", "Nowcast"), ("fc", "Forecast"), ("pp", "Products")]
-STATIONS = [("USGS_12113415", "Duwamish at South Park (USGS 12113415)"), ("SouthPark_PumpStation", "South Park pump station"),
-            ("Seattle_bay", "Elliott Bay, Seattle (NOAA 9447130)"), ("USGS_12113390", "Duwamish at Golf Course, Tukwila (USGS 12113390)"),
-            ("USGS_12113344", "Green River at 200th St, Kent (USGS 12113344)")]
+# in order along the river, from Elliott Bay upstream
+STATIONS = [("Seattle_bay", "1 · Elliott Bay, Seattle (NOAA 9447130), the ocean end"),
+            ("SouthPark_PumpStation", "2 · South Park pump station, 640 S Riverside Dr"),
+            ("USGS_12113415", "3 · Duwamish at E Marginal Way Bridge, South Park (USGS 12113415), 1.5 km upstream of the pump station"),
+            ("USGS_12113390", "4 · Duwamish at Golf Course, Tukwila (USGS 12113390)"),
+            ("USGS_12113344", "5 · Green River at 200th St, Kent (USGS 12113344), the upstream end of the tide")]
 C = dict(obs="#1d1d1f", an="#5ac8fa", fc="#ff9f0a", minor="#ffcc00", major="#ff3b30", street="#af52de",
          green="#34c759", blue="#0a84ff", orange="#ff9f0a", red="#ff3b30", gray="#8e8e93")
 MAP = getattr(go, "Scattermap", None) or go.Scattermapbox      # plotly >= 6 renamed the map traces
@@ -281,6 +284,7 @@ with tab_fc:
         ser = fetch_json(f"cycles/{key}/series.json") or {}
         if not ser.get("forecast") and not ser.get("catchup"):
             st.info("No model output yet for this cycle.")
+        st.caption("Stations from the ocean upstream: Elliott Bay, the pump station, the South Park gauge, Tukwila, Kent. The map beside each chart shows where it sits.")
         g_all, dom = fetch_csv("gauges.csv"), fetch_json("domain.json")
         for name, title in STATIONS:
             if ser.get("forecast", {}).get(name) or ser.get("catchup", {}).get(name):
