@@ -20,7 +20,7 @@ import requests
 import streamlit as st
 
 FT = 3.28084
-STAGES = [("prep", "Prepare"), ("an", "Nowcast"), ("fc", "Forecast"), ("pp", "Products")]
+STAGES = [("prep", "Preprocessing"), ("an", "Nowcast"), ("fc", "Forecast"), ("pp", "Products")]
 # in order along the river, from Elliott Bay upstream
 STATIONS = [("Seattle_bay", "1 · Elliott Bay, Seattle (NOAA 9447130), the ocean end"),
             ("SouthPark_PumpStation", "2 · South Park pump station, 640 S Riverside Dr"),
@@ -49,6 +49,8 @@ h1, h2 {{ letter-spacing: -0.02em; color: #1d1d1f; font-weight: 600; }} h1 {{ fo
 .step {{ background: #f5f5f7; border-radius: 12px; padding: 10px 12px; min-height: 64px; }}
 .step .n {{ font-size: 12px; color: #6e6e73; }} .step .t {{ margin: 3px 0 4px; }}
 .bar {{ height: 6px; background: #e5e5ea; border-radius: 3px; overflow: hidden; margin-top: 6px; }} .bar > i {{ display: block; height: 100%; background: #0a84ff; border-radius: 3px; }}
+.steplist {{ margin-top: 6px; border-top: 1px solid #e5e5ea; padding-top: 5px; }}
+.steplist .sr {{ display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: #6e6e73; line-height: 1.5; font-variant-numeric: tabular-nums; }}
 .cycle-title {{ font-size: 17px; font-weight: 600; letter-spacing: -0.02em; }} .cycle-sub {{ font-size: 12.5px; color: #6e6e73; }}
 div[data-testid="stSidebar"], div[data-testid="stSidebarCollapsedControl"], button[data-testid="stExpandSidebarButton"] {{ display: none; }}
 div[data-testid="stRadio"] label p, div[data-testid="stCheckbox"] label p {{ font-size: 13px; }}
@@ -124,16 +126,23 @@ def stepper(rec):
     cells = []
     for key, label in STAGES:
         s = rec["stages"].get(key, {})
-        extra = ""
-        if s.get("state") == "RUNNING":
-            extra = f'<div class="s">{s.get("elapsed", "")} on {s.get("node", "")}</div>'
-            if s.get("pct") is not None:
-                extra += f'<div class="bar"><i style="width:{s["pct"]:.0f}%"></i></div><div class="s">SFINCS {s["pct"]:.0f}%</div>'
-        elif s.get("state") == "PENDING":
-            extra = f'<div class="s">{s.get("reason", "")}</div>'
-        elif s.get("state") == "COMPLETED" and s.get("elapsed"):
-            extra = f'<div class="s">{s["elapsed"]}</div>'
-        cells.append(f'<div class="step"><div class="n">{label}</div><div class="t">{pill(s.get("state"))}</div>{extra}</div>')
+        st_ = s.get("state")
+        bits = []
+        if s.get("cpus") and key in ("an", "fc"):
+            bits.append(f'{s["cpus"]} cores')
+        if s.get("elapsed") and st_ in ("RUNNING", "COMPLETED", "FAILED", "TIMEOUT"):
+            bits.append(("running " if st_ == "RUNNING" else "took ") + s["elapsed"])
+        if s.get("node") and st_ in ("RUNNING", "COMPLETED"):
+            bits.append(s["node"])
+        extra = f'<div class="s">{" · ".join(bits)}</div>' if bits else ""
+        if st_ == "RUNNING" and s.get("pct") is not None:
+            extra += f'<div class="bar"><i style="width:{s["pct"]:.0f}%"></i></div><div class="s">SFINCS {s["pct"]:.0f}%</div>'
+        elif st_ == "PENDING":
+            extra += f'<div class="s">{"waiting for the previous stage" if s.get("reason") == "Dependency" else s.get("reason", "")}</div>'
+        if key == "prep" and s.get("steps"):
+            rows = "".join(f'<div class="sr"><span>{x["step"]}</span><span>{x["seconds"] // 60}:{x["seconds"] % 60:02d}</span></div>' for x in s["steps"])
+            extra += f'<div class="steplist">{rows}</div>'
+        cells.append(f'<div class="step"><div class="n">{label}</div><div class="t">{pill(st_)}</div>{extra}</div>')
     return f'<div class="steps">{"".join(cells)}</div>'
 
 
@@ -390,7 +399,7 @@ with tab_about:
              'The South Park forecast includes a +3.9 cm high-water correction from the model calibration.</div>')
     st.markdown("## A forecast cycle")
     st.markdown("Cycles are named after the NOAA model cycle time they use, 00z and 12z (UTC). NOAA posts the ocean forecast about 5 to 6 hours after that time, so the "
-                "cycle then runs in four stages, shown on the Overview: **Prepare** (download all inputs, build the two runs), **Nowcast** (10 min, or up to an hour after a cold start), "
+                "cycle then runs in four stages, shown on the Overview: **Preprocessing** (download all inputs, build the two runs), **Nowcast** (10 min, or up to an hour after a cold start), "
                 "**Forecast** (3 to 4 hours), **Products** (gauge skill, 2 m flood map, report). Each cycle's nowcast continues from the previous one, so the model state carries forward "
                 "from cycle to cycle. Products for the 00z cycle are ready around 10 to 11 UTC (2 to 3 am Pacific); for 12z around 10 to 11 pm UTC.")
     st.markdown("## Reading the charts")
