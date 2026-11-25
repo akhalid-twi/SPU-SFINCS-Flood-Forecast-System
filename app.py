@@ -14,6 +14,7 @@ import os
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import requests
@@ -163,6 +164,124 @@ def live_obs(name: str, t0: str, t1: str) -> pd.Series:
                           for r in tsr[0]["values"][0]["value"] if float(r["value"]) != nod}, dtype=float).sort_index()
     except Exception:
         return pd.Series(dtype=float)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def kbfi_obs(t0: str, t1: str) -> pd.DataFrame:
+    """Boeing Field (NWS KBFI) observations: wind [m/s], direction [deg from], pressure [hPa], 3-h rain [mm]; UTC."""
+    try:
+        r = requests.get("https://api.weather.gov/stations/KBFI/observations", timeout=30,
+                         params={"start": pd.Timestamp(t0).strftime("%Y-%m-%dT%H:%M:%SZ"), "end": pd.Timestamp(t1).strftime("%Y-%m-%dT%H:%M:%SZ")},
+                         headers={"User-Agent": "spu-flood-dashboard (akhalid@thewaterinstitute.org)", "Accept": "application/geo+json"}).json()
+    except Exception:
+        return pd.DataFrame()
+
+    def g(p, k):
+        return (p.get(k) or {}).get("value")
+
+    rows = []
+    for f in r.get("features", []):
+        p = f["properties"]
+        ws, pr = g(p, "windSpeed"), g(p, "barometricPressure")
+        rows.append({"t": pd.Timestamp(p["timestamp"]).tz_convert("UTC").tz_localize(None),
+                     "wind_ms": None if ws is None else ws / 3.6, "wind_dir": g(p, "windDirection"),
+                     "pressure_hpa": None if pr is None else pr / 100, "rain3h_mm": g(p, "precipitationLast3Hours")})
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).set_index("t").sort_index().apply(pd.to_numeric, errors="coerce")
+
+
+def met_skill(model: pd.Series, obs: pd.Series, circular: bool = False, speed=None) -> dict:
+    o = obs.dropna().resample("1h").first() if circular else obs.dropna().resample("1h").mean()
+    pair = pd.concat({"m": model, "o": o}, axis=1).dropna()
+    if speed is not None:
+        pair = pair[speed.reindex(pair.index).fillna(0) >= 2]
+    if len(pair) < 6:
+        return {}
+    e = pair.m - pair.o
+    if circular:
+        e = (e + 180) % 360 - 180
+        return {"n": len(pair), "mae": float(e.abs().mean())}
+    return {"n": len(pair), "bias": float(e.mean()), "rmse": float(np.sqrt((e ** 2).mean())), "r": float(pair.m.corr(pair.o))}
+
+
+def met_fig(frc, obs, key, title, ytitle, t0, obs_col=None, bars=False, obs_rate=False):
+    fig = go.Figure()
+    if obs_col is not None and len(obs) and obs_col in obs and obs[obs_col].notna().any():
+        o = obs[obs_col].dropna()
+        if obs_rate:   # 3-h total -> mean rate over those 3 hours
+            fig.add_trace(go.Bar(x=o.index, y=o.values / 3.0, name="Observed, KBFI (3-h mean)", marker_color="#8e8e93", opacity=0.45, width=3 * 3600e3))
+        else:
+            fig.add_trace(go.Scatter(x=o.index, y=o.values, name="Observed, KBFI", line=dict(color=C["obs"], width=2.2), opacity=0.55))
+    for run, label, col in (("nowcast", "Nowcast (HRRR analyses)", C["an"]), ("forecast", "Forecast (HRRR, GFS)", C["fc"])):
+        m = ts(frc.get(run, {}).get(key))
+        if not len(m):
+            continue
+        if bars:
+            fig.add_trace(go.Bar(x=m.index, y=m.values, name=label, marker_color=col, opacity=0.75, width=3600e3))
+            continue
+        if key == "wind_ms":
+            d = ts(frc.get(run, {}).get("wind_dir")).reindex(m.index)
+            txt = [f"{v:.1f} m/s from {int(x)}°" if pd.notna(x) else f"{v:.1f} m/s" for v, x in zip(m.values, d.values)]
+            fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, line=dict(color=col, width=2.2, dash="dot"), text=txt, hovertemplate="%{text}"))
+        else:
+            fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, line=dict(color=col, width=2.2, dash="dot")))
+    fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
+    fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=280, barmode="overlay",
+                      margin=dict(l=10, r=20, t=70, b=10), paper_bgcolor="white", plot_bgcolor="white", hovermode="x unified",
+                      legend=dict(orientation="h", y=1.08, yanchor="bottom", x=0, font=dict(size=12)),
+                      yaxis=dict(title=ytitle, gridcolor="#f2f2f7", zeroline=False), xaxis=dict(gridcolor="#f2f2f7"),
+                      font=dict(family=FONT, color="#1d1d1f"))
+    return fig
+
+
+def met_section(ser: dict, t0):
+    frc = ser.get("forcing") or {}
+    st.markdown("## Weather")
+    if not frc.get("nowcast") and not frc.get("forecast"):
+        st.caption("Weather forcing appears here once the publisher on Rougarou has been updated.")
+        return
+    starts = [ts(frc.get(k, {}).get("wind_ms")).index.min() for k in ("nowcast", "forecast") if frc.get(k, {}).get("wind_ms")]
+    a = min([x for x in starts if pd.notna(x)] + [pd.Timestamp(t0) - pd.Timedelta(days=3)])
+    b = min(pd.Timestamp.utcnow().tz_localize(None), pd.Timestamp(t0) + pd.Timedelta(days=7))
+    obs = kbfi_obs(str(a), str(b))
+    st.caption("What the model was driven by at Boeing Field (nowcast: HRRR analyses; forecast: HRRR to 48 h, then GFS), against what the "
+               "Boeing Field weather station (NWS KBFI, about 2 km from the pump station) measured, fetched live. Station rain is reported as 3-hour totals.")
+    cfg_ = dict(displaylogo=False)
+    st.plotly_chart(met_fig(frc, obs, "wind_ms", "Wind speed at Boeing Field (hover for direction)", "m/s", t0, "wind_ms"), width="stretch", config=cfg_)
+    st.plotly_chart(met_fig(frc, obs, "pressure_hpa", "Mean sea level pressure at Boeing Field", "hPa", t0, "pressure_hpa"), width="stretch", config=cfg_)
+    st.plotly_chart(met_fig(frc, obs, "rain_mmh", "Rain at Boeing Field", "mm/h", t0, "rain3h_mm", bars=True, obs_rate=True), width="stretch", config=cfg_)
+    rows = []
+    for run, label in (("nowcast", "Nowcast"), ("forecast", "Forecast (elapsed part)")):
+        f = frc.get(run, {})
+        if not f or obs.empty:
+            continue
+        ws, wd, pr = ts(f.get("wind_ms")), ts(f.get("wind_dir")), ts(f.get("pressure_hpa"))
+        sp = met_skill(ws, obs["wind_ms"]) if "wind_ms" in obs else {}
+        di = met_skill(wd, obs["wind_dir"], circular=True, speed=obs["wind_ms"].dropna().resample("1h").mean()) if "wind_dir" in obs else {}
+        pp = met_skill(pr, obs["pressure_hpa"]) if "pressure_hpa" in obs else {}
+        rr = {}
+        if "rain3h_mm" in obs and f.get("rain_mmh"):
+            o3 = obs["rain3h_mm"].dropna()
+            m3 = ts(f.get("rain_mmh")).resample("1h").mean().rolling("3h").sum()
+            m3 = m3.reindex(o3.index, method="nearest", tolerance=pd.Timedelta("40min")).dropna()
+            if len(m3):
+                rr = {"model": float(m3.sum()), "obs": float(o3.reindex(m3.index).sum())}
+
+        def fmt(d, k, nd=1):
+            if k not in d:
+                return "—"
+            return f"{d[k]:+.{nd}f}" if k == "bias" else (f"{d[k]:.2f}" if k == "r" else f"{d[k]:.{nd}f}")
+
+        rows.append({"run": label, "hours": sp.get("n", pp.get("n", 0)),
+                     "wind bias m/s": fmt(sp, "bias"), "wind RMSE m/s": fmt(sp, "rmse"), "wind r": fmt(sp, "r"),
+                     "direction error °": fmt(di, "mae", 0), "pressure bias hPa": fmt(pp, "bias"), "pressure RMSE hPa": fmt(pp, "rmse"),
+                     "rain model / obs mm": f"{rr['model']:.1f} / {rr['obs']:.1f}" if rr else "—"})
+    if rows:
+        st.markdown("**Weather skill against Boeing Field**")
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+        st.caption("Bias = model minus observed. Direction error is the mean angle between model and observed wind when the observed wind "
+                   "is 2 m/s or more. Rain compares 3-hour totals at the times the station reported them.")
 
 
 def observed_now(ser: dict, name: str, t0) -> pd.Series:
@@ -407,6 +526,7 @@ with tab_fc:
                 with cm_:
                     if g_all is not None:
                         st.plotly_chart(station_map(g_all, dom, name), width="stretch", config=dict(displayModeBar=False, scrollZoom=False))
+        met_section(ser, sel)
         if r.get("has_products"):
             c1, c2 = st.columns(2)
             with c1:
