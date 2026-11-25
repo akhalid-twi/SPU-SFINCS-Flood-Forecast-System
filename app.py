@@ -23,7 +23,7 @@ FT = 3.28084
 STAGES = [("prep", "Preprocessing"), ("an", "Nowcast"), ("fc", "Forecast"), ("pp", "Products")]
 # in order along the river, from Elliott Bay upstream
 STATIONS = [("Seattle_bay", "1 · Elliott Bay, Seattle (NOAA 9447130), the ocean end"),
-            ("SouthPark_PumpStation", "2 · South Park pump station, 640 S Riverside Dr"),
+            ("SouthPark_PumpStation", "2 · South Park pump station, 640 S Riverside Dr (no gauge here; observed line is the nearest gauge)"),
             ("USGS_12113415", "3 · Duwamish at E Marginal Way Bridge, South Park (USGS 12113415), 1.5 km upstream of the pump station"),
             ("USGS_12113390", "4 · Duwamish at Golf Course, Tukwila (USGS 12113390)"),
             ("USGS_12113344", "5 · Green River at 200th St, Kent (USGS 12113344), the upstream end of the tide")]
@@ -235,8 +235,11 @@ def wl_chart(ser, name, title, unit, t0, cfg):
     fig = go.Figure()
     last_obs = None
     # observed solid in the back; nowcast and forecast dotted on top, so the overlap stays visible
-    for key, label, col, w in (("observed", "Observed", C["obs"], 2.4), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.2)):
-        s = observed_now(ser, name, t0) if key == "observed" else ts(ser.get(key, {}).get(name))
+    # the pump station has no gauge: show the South Park gauge 1.5 km upstream as a labelled reference
+    obs_name, obs_label = (("USGS_12113415", "Observed at USGS 12113415, 1.5 km upstream") if name == "SouthPark_PumpStation"
+                           else (name, "Observed"))
+    for key, label, col, w in (("observed", obs_label, C["obs"], 2.4), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.2)):
+        s = observed_now(ser, obs_name, t0) if key == "observed" else ts(ser.get(key, {}).get(name))
         if len(s):
             if key == "observed":
                 last_obs = s.index.max()
