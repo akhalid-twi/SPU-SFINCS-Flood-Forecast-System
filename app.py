@@ -171,12 +171,17 @@ def wl_chart(ser, name, title, unit, t0, cfg):
         bands.sort(key=lambda b: b[1])
         vis = [d[1] for key in ("observed", "catchup", "forecast") for d in ser.get(key, {}).get(name, []) if d[1] is not None]
         top = (max(vis + [bands[-1][1]]) + 0.6) * F
+        low = (min(vis) if vis else bands[0][1] - 1) * F
+        close = 0.07 * (top - low)          # labels closer than ~7% of the chart height would overlap
+        side, prev = "left", None
         for i, (lab, v) in enumerate(bands):
             hi = bands[i + 1][1] * F if i + 1 < len(bands) else top
             col = shade.get(lab.replace("NWS ", ""), "#ff9d00")
+            side = ("right" if side == "left" else "left") if prev is not None and v * F - prev < close else "left"
+            prev = v * F
             fig.add_hrect(y0=v * F, y1=hi, fillcolor=col, opacity=0.16 if "major" in lab else 0.14, line_width=0, layer="below")
             fig.add_hline(y=v * F, line=dict(color=col, width=1), opacity=0.6, annotation_text=f"{lab} {v * F:.2f} {unit}",
-                          annotation_position="top left", annotation_font=dict(size=10.5, color=col))
+                          annotation_position=f"top {side}", annotation_font=dict(size=10.5, color=col))
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
     fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=340,
                       margin=dict(l=10, r=70, t=78, b=10), paper_bgcolor="white",
