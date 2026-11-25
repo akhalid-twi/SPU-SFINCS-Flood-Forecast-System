@@ -33,7 +33,7 @@ MAP = getattr(go, "Scattermap", None) or go.Scattermapbox      # plotly >= 6 ren
 MAPKEY = "map" if hasattr(go, "Scattermap") else "mapbox"
 FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Inter, sans-serif"
 
-st.set_page_config(page_title="South Park forecast", page_icon="🌊", layout="wide", initial_sidebar_state="collapsed")
+st.set_page_config(page_title="SPU Flood Forecast System", page_icon="🌊", layout="wide", initial_sidebar_state="collapsed")
 st.markdown(f"""<style>
 html, body, .stApp, .stMarkdown, p, h1, h2, h3, label, input, button, table, .stCaption {{ font-family: {FONT}; }}
 span[data-testid="stIconMaterial"], .material-symbols-rounded, [class*="material-symbols"] {{ font-family: "Material Symbols Rounded" !important; }}
@@ -157,23 +157,26 @@ def wl_chart(ser, name, title, unit, t0, cfg):
             if key == "forecast":
                 s = s + corr
             fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, line=dict(color=col, width=w)))
-    cats = (cfg.get("categories") or {}).get(name) or ((cfg.get("categories") or {}).get("Seattle_bay") if name == "SouthPark_PumpStation" else None)
+    # thresholds as shaded bands (AHPS style): each band runs from its level up to the next one, the top one to the chart top.
+    # Seattle: the NWS categories from NWPS. South Park and the pump station: the project's minor/major levels and the
+    # gate level at which streets flooded in the SPU log. Other gauges have no published thresholds.
+    shade = {"action": "#f5d300", "minor": "#ff9d00", "streets flood (SPU log)": "#b23cff", "moderate": "#ff2a00", "major": "#ff2a00"}
+    bands = []
+    cats = (cfg.get("categories") or {}).get(name)
     if cats:
-        # NWS flood categories as shaded bands, AHPS colours; each band runs up to the next category
-        order = [(k, cats[k]) for k in ("action", "minor", "moderate", "major") if k in cats]
+        bands = [(f"NWS {k}", cats[k]) for k in ("action", "minor", "moderate", "major") if k in cats]
+    elif name in ("USGS_12113415", "SouthPark_PumpStation"):
+        bands = [("minor", cfg["minor_m"]), ("major", cfg["major_m"])] + ([("streets flood (SPU log)", cfg["street_ft"] / FT)] if cfg.get("street_ft") else [])
+    if bands:
+        bands.sort(key=lambda b: b[1])
         vis = [d[1] for key in ("observed", "catchup", "forecast") for d in ser.get(key, {}).get(name, []) if d[1] is not None]
-        top = (max(vis + [order[-1][1]]) + 0.6) * F if vis else order[-1][1] * F + 1
-        shade = {"action": "#f5d300", "minor": "#ff9d00", "moderate": "#ff2a00", "major": "#c800ff"}
-        for i, (k, v) in enumerate(order):
-            hi = order[i + 1][1] * F if i + 1 < len(order) else top
-            fig.add_hrect(y0=v * F, y1=hi, fillcolor=shade[k], opacity=0.14, line_width=0, layer="below",
-                          annotation_text=f"NWS {k} {v * F:.2f}", annotation_position="top left", annotation_font=dict(size=10, color=shade[k]))
-    if name in ("USGS_12113415", "SouthPark_PumpStation"):
-        for v, lab, col in ((cfg["minor_m"], "minor", C["minor"]), (cfg["major_m"], "major", C["major"])):
-            fig.add_hline(y=v * F, line=dict(color=col, dash="dash", width=1.2), annotation_text=f"{lab} {v * F:.2f}", annotation_position="right")
-        if cfg.get("street_ft"):
-            v = cfg["street_ft"] if unit == "ft" else cfg["street_ft"] / FT
-            fig.add_hline(y=v, line=dict(color=C["street"], dash="dot", width=1.2), annotation_text="streets flood (SPU log)", annotation_position="top left")
+        top = (max(vis + [bands[-1][1]]) + 0.6) * F
+        for i, (lab, v) in enumerate(bands):
+            hi = bands[i + 1][1] * F if i + 1 < len(bands) else top
+            col = shade.get(lab.replace("NWS ", ""), "#ff9d00")
+            fig.add_hrect(y0=v * F, y1=hi, fillcolor=col, opacity=0.16 if "major" in lab else 0.14, line_width=0, layer="below")
+            fig.add_hline(y=v * F, line=dict(color=col, width=1), opacity=0.6, annotation_text=f"{lab} {v * F:.2f} {unit}",
+                          annotation_position="top left", annotation_font=dict(size=10.5, color=col))
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
     fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=340,
                       margin=dict(l=10, r=70, t=78, b=10), paper_bgcolor="white",
@@ -235,14 +238,14 @@ def gauge_map(g, domain, skill, aoi):
 # ------------------------------------------------------------------ page
 status = fetch_json("status.json")
 if not status:
-    st.title("South Park flood forecast")
+    st.title("SPU Flood Forecast System")
     st.warning(f"No snapshot found at {URL or DIR}. The cluster publishes one every 5 minutes; try again shortly.")
     st.stop()
 cfg, recs, tz = status["config"], status["cycles"], status["config"]["tz"]
 F = lambda u: FT if u == "ft" else 1.0
 
-st.markdown("# South Park flood forecast")
-st.markdown(f'<div class="cycle-sub">Duwamish River, Seattle · SFINCS compound flood model · data as of {local(status["updated"], tz)}</div>', unsafe_allow_html=True)
+st.markdown("# SPU Flood Forecast System")
+st.markdown(f'<div class="cycle-sub">South Park, Duwamish River, Seattle · SFINCS compound flood model · data as of {local(status["updated"], tz)}</div>', unsafe_allow_html=True)
 # controls in a row under the title (no sidebar)
 c_sel, c_unit, c_auto, c_btn = st.columns([3.2, 1.1, 1.3, 1.1], vertical_alignment="bottom")
 with c_sel:
