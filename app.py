@@ -161,10 +161,33 @@ def wl_chart(ser, name, title, unit, t0, cfg):
             v = cfg["street_ft"] if unit == "ft" else cfg["street_ft"] / FT
             fig.add_hline(y=v, line=dict(color=C["street"], dash="dot", width=1.2), annotation_text="streets flood (SPU log)", annotation_position="top left")
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
-    fig.update_layout(title=dict(text=title, font=dict(size=15)), height=320, margin=dict(l=10, r=70, t=40, b=10), paper_bgcolor="white",
-                      plot_bgcolor="white", hovermode="x unified", legend=dict(orientation="h", y=1.12, x=0, font=dict(size=12)),
+    fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=340,
+                      margin=dict(l=10, r=70, t=78, b=10), paper_bgcolor="white",
+                      plot_bgcolor="white", hovermode="x unified", legend=dict(orientation="h", y=1.08, yanchor="bottom", x=0, font=dict(size=12)),
                       yaxis=dict(title=f"{unit} NAVD88", gridcolor="#f2f2f7", zeroline=False), xaxis=dict(gridcolor="#f2f2f7"),
                       font=dict(family=FONT, color="#1d1d1f"))
+    return fig
+
+
+STATION_KEY = {"Seattle_bay": "COOPS_9447130", "SouthPark_PumpStation": "SP_pump_station"}
+
+
+def station_map(g, domain, name):
+    """Small map: the model domain, all gauges faint, this station highlighted."""
+    key = STATION_KEY.get(name, name)
+    row = g[g.name == key]
+    fig = go.Figure()
+    if domain:
+        lon, lat = zip(*domain)
+        fig.add_trace(MAP(lon=lon, lat=lat, mode="lines", line=dict(color="#8e8e93", width=1.5), hoverinfo="skip"))
+    sc = g[(g.scored.astype(str).str.lower() == "true") & (g.name != key)]
+    fig.add_trace(MAP(lon=sc.lon, lat=sc.lat, mode="markers", marker=dict(size=6, color="#c7c7cc"), text=sc.label, hoverinfo="text"))
+    if len(row):
+        fig.add_trace(MAP(lon=row.lon, lat=row.lat, mode="markers", marker=dict(size=16, color=C["fc"]), text=row.label, hoverinfo="text"))
+        center = dict(lat=float(row.lat.iloc[0]), lon=float(row.lon.iloc[0]))
+    else:
+        center = dict(lat=47.50, lon=-122.28)
+    fig.update_layout(**{MAPKEY: dict(style="carto-positron", center=center, zoom=9.6)}, height=340, margin=dict(l=0, r=0, t=0, b=0), showlegend=False)
     return fig
 
 
@@ -258,9 +281,15 @@ with tab_fc:
         ser = fetch_json(f"cycles/{key}/series.json") or {}
         if not ser.get("forecast") and not ser.get("catchup"):
             st.info("No model output yet for this cycle.")
+        g_all, dom = fetch_csv("gauges.csv"), fetch_json("domain.json")
         for name, title in STATIONS:
             if ser.get("forecast", {}).get(name) or ser.get("catchup", {}).get(name):
-                st.plotly_chart(wl_chart(ser, name, title, unit, sel, cfg), width="stretch", config=dict(displaylogo=False))
+                cc, cm_ = st.columns([3, 1], vertical_alignment="center")
+                with cc:
+                    st.plotly_chart(wl_chart(ser, name, title, unit, sel, cfg), width="stretch", config=dict(displaylogo=False))
+                with cm_:
+                    if g_all is not None:
+                        st.plotly_chart(station_map(g_all, dom, name), width="stretch", config=dict(displayModeBar=False, scrollZoom=False))
         if r.get("has_products"):
             c1, c2 = st.columns(2)
             with c1:
