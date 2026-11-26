@@ -498,14 +498,25 @@ with tab_over:
             vals = [("Latest forecast", "running", "no products yet"), ("Peak at South Park", "—", ""), ("Flood class", "—", ""), ("Cycles", f"{len(recs)}", "")]
         # one wrapping grid: four across on a desktop, two across on a phone
         st.markdown('<div class="tiles">' + "".join(f'<div class="card tile">{metric(k, v, s)}</div>' for k, v, s in vals) + '</div>', unsafe_allow_html=True)
-        st.markdown("## Cycles")
-        for r in recs:
+        def cycle_card(r):
             row = r.get("row", {})
             sub = " · ".join(x for x in (f"STOFS {row['stofs_cycle']}" if row.get("stofs_cycle") else "", f"HRRR {row['hrrr_cycle']}" if row.get("hrrr_cycle") else "",
                                           f"GFS {row['gfs_cycle']}" if row.get("gfs_cycle") else "", "backfill" if str(row.get("backfill", "")).lower() == "true" else "",
                                           row.get("warm_from", "")) if x)
             card(f'<div class="cycle-title">{pd.Timestamp(r["t0"]):%a %b %d, %H}z <span class="cycle-sub">· {local(r["t0"], tz)}</span></div>'
                  f'<div class="cycle-sub" style="margin-bottom:10px">{sub or "preparing…"}</div>{stepper(r)}')
+
+        # the newest cycle only, plus any older one still running; the rest folded away
+        active = lambda r: any(v.get("state") in ("RUNNING", "PENDING") for v in r["stages"].values())
+        show = [recs[0]] + [r for r in recs[1:] if active(r)]
+        st.markdown("## Latest cycle")
+        for r in show:
+            cycle_card(r)
+        older = [r for r in recs if r not in show]
+        if older:
+            with st.expander(f"Earlier cycles ({len(older)})"):
+                for r in older:
+                    cycle_card(r)
 
 with tab_fc:
     if sel:
