@@ -24,7 +24,7 @@ FT = 3.28084
 STAGES = [("prep", "Preprocessing"), ("an", "Nowcast"), ("fc", "Forecast"), ("pp", "Products")]
 # in order along the river, from Elliott Bay upstream
 STATIONS = [("Seattle_bay", "1 · Elliott Bay, Seattle (NOAA 9447130), the ocean end"),
-            ("SouthPark_PumpStation", "2 · South Park pump station, 640 S Riverside Dr (no gauge here; observed line is the nearest gauge)"),
+            ("SouthPark_PumpStation", "2 · South Park pump station, 640 S Riverside Dr (no gauge here: Seattle downstream and the USGS gauge upstream for reference)"),
             ("USGS_12113415", "3 · Duwamish at E Marginal Way Bridge, South Park (USGS 12113415), 1.5 km upstream of the pump station"),
             ("USGS_12113390", "4 · Duwamish at Golf Course, Tukwila (USGS 12113390)"),
             ("USGS_12113344", "5 · Green River at 200th St, Kent (USGS 12113344), the upstream end of the tide")]
@@ -354,9 +354,14 @@ def wl_chart(ser, name, title, unit, t0, cfg):
     fig = go.Figure()
     last_obs = None
     # observed solid in the back; nowcast and forecast dotted on top, so the overlap stays visible
-    # the pump station has no gauge: show the South Park gauge 1.5 km upstream as a labelled reference
-    obs_name, obs_label = (("USGS_12113415", "Observed at USGS 12113415, 1.5 km upstream") if name == "SouthPark_PumpStation"
-                           else (name, "Observed"))
+    # the pump station has no gauge. Its neighbours: Seattle downstream (low tides drain to the bay level there) and USGS
+    # 12113415 4.7 km upstream, above the river-km-11 rock outcrop that holds low tides up near 0 ft
+    obs_name, obs_label = (("Seattle_bay", "Observed at Seattle, downstream") if name == "SouthPark_PumpStation" else (name, "Observed"))
+    if name == "SouthPark_PumpStation":
+        up = observed_now(ser, "USGS_12113415", t0)
+        if len(up):
+            fig.add_trace(go.Scatter(x=up.index, y=up.values * F, name="Observed at USGS 12113415, 4.7 km upstream (above the outcrop)",
+                                     line=dict(color="#aeaeb2", width=1.4), opacity=0.8))
     for key, label, col, w in (("observed", obs_label, C["obs"], 2.4), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.2)):
         s = observed_now(ser, obs_name, t0) if key == "observed" else ts(ser.get(key, {}).get(name))
         if len(s):
