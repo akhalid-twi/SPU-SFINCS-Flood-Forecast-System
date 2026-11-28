@@ -235,18 +235,12 @@ def met_skill(model: pd.Series, obs: pd.Series, circular: bool = False, speed=No
 
 def met_fig(frc, obs, key, title, ytitle, t0, obs_col=None, bars=False, obs_rate=False):
     fig = go.Figure()
-    if obs_col is not None and len(obs) and obs_col in obs and obs[obs_col].notna().any():
-        o = obs[obs_col].dropna()
-        if obs_rate:   # 3-h total -> mean rate over those 3 hours
-            fig.add_trace(go.Bar(x=o.index, y=o.values / 3.0, name="Observed, KBFI (3-h mean)", marker_color="#8e8e93", opacity=0.45, width=3 * 3600e3))
-        else:
-            fig.add_trace(go.Scatter(x=o.index, y=o.values, name="Observed, KBFI", mode="markers", marker=dict(color=C["obs"], size=4, opacity=0.7)))
     for run, label, col in (("nowcast", "Nowcast (HRRR analyses)", C["an"]), ("forecast", "Forecast (HRRR, GFS)", C["fc"])):
         m = ts(frc.get(run, {}).get(key))
         if not len(m):
             continue
         if bars:
-            fig.add_trace(go.Bar(x=m.index, y=m.values, name=label, marker_color=col, opacity=0.75, width=3600e3))
+            fig.add_trace(go.Bar(x=m.index, y=m.values, name=label, marker_color=col, opacity=0.55, width=3600e3))
             continue
         if key == "wind_ms":
             d = ts(frc.get(run, {}).get("wind_dir")).reindex(m.index)
@@ -254,6 +248,16 @@ def met_fig(frc, obs, key, title, ytitle, t0, obs_col=None, bars=False, obs_rate
             fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, mode="lines", line=dict(color=col, width=2), text=txt, hovertemplate="%{text}"))
         else:
             fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, mode="lines", line=dict(color=col, width=2)))
+    if obs_col is not None and len(obs) and obs_col in obs and obs[obs_col].notna().any():
+        o = obs[obs_col].dropna()
+        if obs_rate:   # 3-h total -> mean rate over those 3 hours
+            # step line over the 3 hours each report covers, drawn on top of the model bars
+            ob3 = (o / 3.0).sort_index()
+            fig.add_trace(go.Scatter(x=ob3.index - pd.Timedelta("3h"), y=ob3.values, name="Observed, KBFI (3-h mean rate)", mode="lines",
+                                     line=dict(color=C["obs"], width=2.2, shape="hv")))
+        else:
+            fig.add_trace(go.Scatter(x=o.index, y=o.values, name="Observed, KBFI", mode="lines+markers",
+                                     line=dict(color=C["obs"], width=1.6), marker=dict(color=C["obs"], size=3.5)))
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
     fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=280, barmode="overlay",
                       margin=dict(l=10, r=20, t=70, b=10), paper_bgcolor="white", plot_bgcolor="white", hovermode="x unified",
@@ -804,9 +808,14 @@ def analysis_tab():
         f = go.Figure()
         t_lo, t_hi = min(w.index.min() for _, w in windows), max(w.index.max() for _, w in windows)
         ob = obs[t_lo:t_hi] if len(obs) else obs
+        obs_trace = None
         if len(ob):
-            f.add_trace(go.Scatter(x=ob.index, y=ob.values * sc_, name="Observed", mode="markers",
-                                   marker=dict(color=C["obs"], size=3.5, opacity=0.75)))
+            if var == "wl" or var == "wind_dir":
+                obs_trace = go.Scatter(x=ob.index, y=ob.values * sc_, name="Observed", mode="markers", marker=dict(color=C["obs"], size=3.5, opacity=0.75))
+            elif var == "rain_mmh":
+                obs_trace = go.Scatter(x=ob.index - pd.Timedelta("3h"), y=ob.values, name="Observed (3-h mean rate)", mode="lines", line=dict(color=C["obs"], width=2.2, shape="hv"))
+            else:
+                obs_trace = go.Scatter(x=ob.index, y=ob.values, name="Observed", mode="lines+markers", line=dict(color=C["obs"], width=1.6), marker=dict(color=C["obs"], size=3))
         n = len(windows)
         for i, (t0, w) in enumerate(windows):
             # one hue, light (oldest) to dark (newest): vermillion ramp
@@ -817,6 +826,8 @@ def analysis_tab():
                                    showlegend=False, hovertemplate=f"cycle {lab(t0)}<br>%{{x|%b %d %H:%M}}: %{{y:.2f}} {ax_unit}<extra></extra>"))
         f.add_trace(go.Scatter(x=[None], y=[None], mode="lines", line=dict(color="rgba(213, 94, 0, 0.9)", width=2),
                                name=f"Forecasts, {n} cycles (darker = newer), lead {lead[0]}–{lead[1]} h" if run_ == "Forecast" else f"Nowcasts, {n} cycles"))
+        if obs_trace is not None:   # observations on top of the forecast lines
+            f.add_trace(obs_trace)
         if var == "wl" and stn in ("USGS_12113415",):
             for v, labl, col in ((cfg["minor_m"], "minor", NWS["minor"]), (cfg["major_m"], "major", NWS["major"])):
                 f.add_hline(y=v * sc_, line=dict(color=col, width=1, dash="dash"), opacity=0.7)
