@@ -28,8 +28,11 @@ STATIONS = [("Seattle_bay", "1 · Elliott Bay, Seattle (NOAA 9447130), the ocean
             ("USGS_12113415", "3 · Duwamish at E Marginal Way Bridge, South Park (USGS 12113415), 1.5 km upstream of the pump station"),
             ("USGS_12113390", "4 · Duwamish at Golf Course, Tukwila (USGS 12113390)"),
             ("USGS_12113344", "5 · Green River at 200th St, Kent (USGS 12113344), the upstream end of the tide")]
-C = dict(obs="#1d1d1f", an="#5ac8fa", fc="#ff9f0a", minor="#ffcc00", major="#ff3b30", street="#af52de",
+# data: observations as dark points, models as solid Okabe-Ito lines (nowcast blue, forecast vermillion)
+# thresholds: NWS/AHPS flood-category colours (action yellow, minor orange, moderate red, major purple), pale bands
+C = dict(obs="#1d1d1f", an="#0072B2", fc="#D55E00", minor="#FF9900", major="#CC33FF", street="#CC79A7",
          green="#34c759", blue="#0a84ff", orange="#ff9f0a", red="#ff3b30", gray="#8e8e93")
+NWS = {"action": "#FFD700", "minor": "#FF9900", "moderate": "#FF0000", "major": "#CC33FF", "streets flood (SPU log)": "#CC79A7"}
 MAP = getattr(go, "Scattermap", None) or go.Scattermapbox      # plotly >= 6 renamed the map traces
 MAPKEY = "map" if hasattr(go, "Scattermap") else "mapbox"
 FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', Inter, sans-serif"
@@ -111,6 +114,27 @@ def fetch(path: str, binary: bool = False):
     if not f.exists():
         return None
     return f.read_bytes() if binary else f.read_text(encoding="utf-8", errors="ignore")
+
+
+RECORD = {}   # t0 -> set it is shown from (filled by record_cycles)
+
+
+def record_cycles(sets: dict, recent: list) -> list:
+    """The dashboard's one record, newest first: the GPU baseline rerun (NOAA tide + STOFS surge) up to its last cycle,
+    then the live cycles after it. Live cycles inside the baseline period (CPU, STOFS tide) are left out."""
+    key = lambda t: f"{pd.Timestamp(t):%Y-%m-%dT%H}"
+    base = sorted(key(t) for t in sets.get("baseline", []))
+    live = sorted(set(key(t) for t in sets.get("live", [])) | set(key(t) for t in recent))
+    cut = base[-1] if base else ""
+    RECORD.clear()
+    RECORD.update({t: "baseline" for t in base})
+    RECORD.update({t: "live" for t in live if t > cut})
+    return sorted(RECORD, reverse=True)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def archive_cycle(set_: str, t0: str):
+    return fetch_json(f"archive/{set_}/{t0}.json")
 
 
 def fetch_json(path):
@@ -216,7 +240,7 @@ def met_fig(frc, obs, key, title, ytitle, t0, obs_col=None, bars=False, obs_rate
         if obs_rate:   # 3-h total -> mean rate over those 3 hours
             fig.add_trace(go.Bar(x=o.index, y=o.values / 3.0, name="Observed, KBFI (3-h mean)", marker_color="#8e8e93", opacity=0.45, width=3 * 3600e3))
         else:
-            fig.add_trace(go.Scatter(x=o.index, y=o.values, name="Observed, KBFI", line=dict(color=C["obs"], width=2.2), opacity=0.55))
+            fig.add_trace(go.Scatter(x=o.index, y=o.values, name="Observed, KBFI", mode="markers", marker=dict(color=C["obs"], size=4, opacity=0.7)))
     for run, label, col in (("nowcast", "Nowcast (HRRR analyses)", C["an"]), ("forecast", "Forecast (HRRR, GFS)", C["fc"])):
         m = ts(frc.get(run, {}).get(key))
         if not len(m):
@@ -227,9 +251,9 @@ def met_fig(frc, obs, key, title, ytitle, t0, obs_col=None, bars=False, obs_rate
         if key == "wind_ms":
             d = ts(frc.get(run, {}).get("wind_dir")).reindex(m.index)
             txt = [f"{v:.1f} m/s from {int(x)}°" if pd.notna(x) else f"{v:.1f} m/s" for v, x in zip(m.values, d.values)]
-            fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, line=dict(color=col, width=2.2, dash="dot"), text=txt, hovertemplate="%{text}"))
+            fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, mode="lines", line=dict(color=col, width=2), text=txt, hovertemplate="%{text}"))
         else:
-            fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, line=dict(color=col, width=2.2, dash="dot")))
+            fig.add_trace(go.Scatter(x=m.index, y=m.values, name=label, mode="lines", line=dict(color=col, width=2)))
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
     fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=280, barmode="overlay",
                       margin=dict(l=10, r=20, t=70, b=10), paper_bgcolor="white", plot_bgcolor="white", hovermode="x unified",
@@ -298,13 +322,15 @@ def observed_now(ser: dict, name: str, t0) -> pd.Series:
     if live.empty:
         return snap
     live = live.resample("15min").mean().dropna()
+    if snap.empty:
+        return live
     out = pd.concat([snap[snap.index < live.index.min()], live])
     return out[~out.index.duplicated(keep="last")]
 
 
 def ts(points) -> pd.Series:
     if not points:
-        return pd.Series(dtype=float)
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
     s = pd.Series({pd.Timestamp(p[0], unit="ms"): p[1] for p in points}, dtype=float)
     return s.dropna()
 
@@ -365,20 +391,22 @@ def wl_chart(ser, name, title, unit, t0, cfg):
         up = observed_now(ser, "USGS_12113415", t0)
         if len(up):
             fig.add_trace(go.Scatter(x=up.index, y=up.values * F, name="Observed at USGS 12113415, 4.7 km upstream (above the outcrop)",
-                                     line=dict(color="#aeaeb2", width=1.4), opacity=0.8))
-    for key, label, col, w in (("observed", obs_label, C["obs"], 2.4), ("catchup", "Nowcast (observed forcing)", C["an"], 2), ("forecast", "Forecast", C["fc"], 2.2)):
+                                     mode="markers", marker=dict(color="#8e8e93", size=3, opacity=0.6, symbol="circle-open")))
+    for key, label, col, w in (("observed", obs_label, C["obs"], 0), ("catchup", "Nowcast (observed forcing)", C["an"], 2.0), ("forecast", "Forecast", C["fc"], 2.0)):
         s = observed_now(ser, obs_name, t0) if key == "observed" else ts(ser.get(key, {}).get(name))
         if len(s):
             if key == "observed":
                 last_obs = s.index.max()
             if key == "forecast":
                 s = s + corr
-            fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, line=dict(color=col, width=w, dash=None if key == "observed" else "dot"),
-                                     opacity=0.55 if key == "observed" else 1))
+            if key == "observed":   # points: the model line stays visible through them, peaks are not hidden
+                fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, mode="markers", marker=dict(color=col, size=3.5, opacity=0.7)))
+            else:
+                fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, mode="lines", line=dict(color=col, width=w)))
     # thresholds as shaded bands (AHPS style): each band runs from its level up to the next one, the top one to the chart top.
     # Seattle: the NWS categories from NWPS. South Park and the pump station: the project's minor/major levels and the
     # gate level at which streets flooded in the SPU log. Other gauges have no published thresholds.
-    shade = {"action": "#f5d300", "minor": "#ff9d00", "streets flood (SPU log)": "#b23cff", "moderate": "#ff2a00", "major": "#ff2a00"}
+    shade = NWS
     bands = []
     cats = (cfg.get("categories") or {}).get(name)
     if cats:
@@ -391,22 +419,23 @@ def wl_chart(ser, name, title, unit, t0, cfg):
         top = (max(vis + [bands[-1][1]]) + 0.6) * F
         low = (min(vis) if vis else bands[0][1] - 1) * F
         close = 0.07 * (top - low)          # labels closer than ~7% of the chart height would overlap
-        last = {"left": -1e9, "right": -1e9}   # last label height on each side
+        # labels in the right margin, each at its level but pushed up to stay at least `gap` above the one below
+        gap, prev = 0.075 * (top - low), -1e9
         for i, (lab, v) in enumerate(bands):
             hi = bands[i + 1][1] * F if i + 1 < len(bands) else top
             col = shade.get(lab.replace("NWS ", ""), "#ff9d00")
-            # left unless that would sit too close to the last left label; then whichever side has more room
-            side = "left" if v * F - last["left"] >= close else max(last, key=lambda k: v * F - last[k])
-            last[side] = v * F
-            fig.add_hrect(y0=v * F, y1=hi, fillcolor=col, opacity=0.16 if "major" in lab else 0.14, line_width=0, layer="below")
-            fig.add_hline(y=v * F, line=dict(color=col, width=1), opacity=0.6, annotation_text=f"{lab} {v * F:.2f} {unit}",
-                          annotation_position=f"top {side}", annotation_font=dict(size=10.5, color=col))
+            fig.add_hrect(y0=v * F, y1=hi, fillcolor=col, opacity=0.08, line_width=0, layer="below")
+            fig.add_hline(y=v * F, line=dict(color=col, width=1), opacity=0.7)
+            y = max(v * F, prev + gap); prev = y
+            fig.add_annotation(x=1.0, xref="paper", xanchor="left", xshift=6, y=y, yanchor="middle", showarrow=False,
+                               text=f"{lab} {v * F:.2f}", font=dict(size=10.5, color=col), align="left")
+
     fig.add_vline(x=pd.Timestamp(t0), line=dict(color="#8e8e93", dash="dot", width=1))
     if last_obs is not None:   # where the observations currently end
         fig.add_annotation(x=last_obs, y=1.0, yref="paper", text=f"observed to {pd.Timestamp(last_obs).tz_localize('UTC').tz_convert(cfg['tz']):%a %H:%M}",
                            showarrow=False, xanchor="right", yanchor="bottom", font=dict(size=10, color="#6e6e73"))
     fig.update_layout(title=dict(text=title, font=dict(size=15), x=0, xanchor="left", y=0.98, yanchor="top"), height=340,
-                      margin=dict(l=10, r=70, t=78, b=10), paper_bgcolor="white",
+                      margin=dict(l=10, r=150 if bands else 20, t=78, b=10), paper_bgcolor="white",
                       plot_bgcolor="white", hovermode="x unified", legend=dict(orientation="h", y=1.08, yanchor="bottom", x=0, font=dict(size=12)),
                       yaxis=dict(title=f"{unit} NAVD88", gridcolor="#f2f2f7", zeroline=False), xaxis=dict(gridcolor="#f2f2f7"),
                       font=dict(family=FONT, color="#1d1d1f"))
@@ -476,20 +505,31 @@ st.markdown(f'<div class="cycle-sub">South Park, Duwamish River, Seattle · SFIN
 # controls in a row under the title (no sidebar)
 c_sel, c_ctl = st.columns([3.2, 3.5], vertical_alignment="bottom")
 with c_sel:
-    sel = st.selectbox("Cycle", [r["t0"] for r in recs], format_func=lambda t: f"{pd.Timestamp(t):%a %b %d, %H}z · {local(t, tz)}") if recs else None
+    _idx = fetch_json("archive/index.json") or {}
+    _sets = _idx.get("sets") or {}
+    _opts = [f"live/{t}" for t in record_cycles(_sets, [r["t0"] for r in recs])]
+
+    def _cyc_label(o):
+        set_, t = o.split("/", 1)
+        return f"{pd.Timestamp(t):%a %b %d, %H}z · {local(t, tz)}" + ("  · baseline rerun" if set_ == "baseline" else "")
+    sel_full = st.selectbox("Cycle", _opts, format_func=_cyc_label) if _opts else None
+    sel_set, sel = sel_full.split("/", 1) if sel_full else ("live", None)
+    sel_set = RECORD.get(sel, "live")
 with c_ctl:
     # one row that wraps on a phone instead of stacking
     with st.container(horizontal=True, vertical_alignment="center", gap="medium"):
         unit = st.radio("Units", ["ft", "m"], horizontal=True, label_visibility="collapsed")
-        auto = st.toggle("Auto-refresh", value=os.environ.get("SPU_NO_AUTO") != "1", help="Reload the data every 60 s")
+        _view = st.session_state.get("view") or "Overview"   # the view chosen on the previous run (selector is below)
+        auto = st.toggle("Auto-refresh", value=_view == "Forecast" and os.environ.get("SPU_NO_AUTO") != "1",
+                         key=f"auto_{_view}", help="Reload the data every 60 s (on by default on the Forecast view)")
         if st.button("Refresh now"):
             st.cache_data.clear()
             st.rerun()
 st.caption(f"Cycles at {', '.join(f'{h:02d}z' for h in cfg['hours'])} UTC · thresholds at USGS 12113415: minor {cfg['minor_m'] * FT:.2f} ft, "
            f"major {cfg['major_m'] * FT:.2f} ft NAVD88 · snapshot {local(status['updated'], tz)}")
-tab_over, tab_fc, tab_an, tab_map, tab_jobs, tab_about = st.tabs(["Overview", "Forecast", "Analysis", "Stations", "Jobs & logs", "About"])
+view = st.segmented_control("View", ["Overview", "Forecast", "Analysis", "Stations", "Jobs & logs", "About"], key="view", label_visibility="collapsed") or "Overview"
 
-with tab_over:
+if view == "Overview":
     if not recs:
         st.info("No cycles yet.")
     else:
@@ -527,12 +567,24 @@ with tab_over:
                 for r in older:
                     cycle_card(r)
 
-with tab_fc:
+if view == "Forecast":
     if sel:
-        r = next(x for x in recs if x["t0"] == sel)
         key = f"{pd.Timestamp(sel):%Y%m%dT%H}"
-        card(stepper(r))
-        ser = fetch_json(f"cycles/{key}/series.json") or {}
+        r = next((x for x in recs if x["t0"] == sel), None) if sel_set == "live" else None
+        if sel_set == "baseline":
+            st.caption("Baseline rerun on the GPU (NOAA tide + STOFS surge), prepared with the data available 5.5 h after the cycle time; "
+                       "past river forecasts are not archived, so rivers use observed flow held constant.")
+        if r is not None:
+            card(stepper(r))
+            ser = fetch_json(f"cycles/{key}/series.json") or {}
+        else:   # older cycle: the compact archive copy (forecast, nowcast, forcing); observations come live
+            arc = archive_cycle(sel_set, key) or {}
+            r = {"t0": sel, "stages": {}, "has_products": False}
+            ser = {"forecast": arc.get("forecast", {}), "catchup": arc.get("nowcast", {}), "observed": {}, "forcing": arc.get("forcing", {}),
+                   "hwc": {"USGS_12113415": (fetch_json("archive/index.json") or {}).get("hwc_m", cfg.get("hwc_m", 0.0))}}
+            src = (arc.get("meta") or {}).get("tide_source", "")
+            if sel_set == "live":
+                st.caption(f"Archived cycle{' · ' + src if src else ''}. Run details, reports and gauge tables are kept for the newest cycles only.")
         if not ser.get("forecast") and not ser.get("catchup"):
             st.info("No model output yet for this cycle.")
         st.caption("Stations from the ocean upstream: Elliott Bay, the pump station, the South Park gauge, Tukwila, Kent. The map beside each chart shows where it sits. "
@@ -567,7 +619,7 @@ with tab_fc:
                 if html:
                     st.components.v1.html(html, height=1400, scrolling=True)
 
-with tab_map:
+if view == "Stations":
     g = fetch_csv("gauges.csv")
     if g is not None:
         sa = fetch_csv(f"cycles/{pd.Timestamp(sel):%Y%m%dT%H}/skill_analysis.csv") if sel else None
@@ -577,7 +629,7 @@ with tab_map:
         st.plotly_chart(gauge_map(g, fetch_json("domain.json"), sa, cfg.get("aoi")), width="stretch", config=dict(displaylogo=False))
         st.dataframe(g[g.scored.astype(str).str.lower() == "true"][["name", "label", "source", "datum"]], hide_index=True, width="stretch")
 
-with tab_jobs:
+if view == "Jobs & logs":
     st.markdown("## Slurm queue")
     q = pd.DataFrame(status.get("queue", []))
     if len(q):
@@ -607,11 +659,6 @@ AN_STATIONS = {"South Park, USGS 12113415": "USGS_12113415", "Seattle, NOAA 9447
                "Tukwila Golf Course, USGS 12113390": "USGS_12113390", "Kent, USGS 12113344": "USGS_12113344"}
 
 
-@st.cache_data(ttl=600, show_spinner=False)
-def archive_cycle(set_: str, t0: str):
-    return fetch_json(f"archive/{set_}/{t0}.json")
-
-
 def pair_metrics(m: pd.Series, o: pd.Series, circular=False) -> dict:
     p = pd.concat({"m": m, "o": o}, axis=1).dropna()
     if len(p) < 6:
@@ -631,14 +678,16 @@ def analysis_tab():
         st.info("The analysis archive appears once the publisher on Rougarou has been updated.")
         return
     sets = {k: v for k, v in idx["sets"].items() if v}
+    rec_t0 = record_cycles(idx["sets"], [])
+    sets = {"record": sorted(rec_t0), **sets}
     hwc_m = idx.get("hwc_m", cfg.get("hwc_m", 0.0))
     st.markdown("## Forecast analysis")
     st.caption("Skill of one forecast cycle or a range of cycles against observations: water level at the gauges (NOAA, USGS, fetched live), "
                "wind, pressure and rain at Boeing Field (NWS KBFI). Choose the lead times to score, e.g. 0–24 h for the next day.")
     c1, c2, c3 = st.columns([1.2, 1.6, 1.6])
     with c1:
-        set_ = st.selectbox("Set", list(sets), format_func=lambda k: {"live": "Live forecasts"}.get(k, f"Rerun: {k}"))
-    t0s = sorted(sets[set_])
+        set_ = st.selectbox("Set", list(sets), format_func=lambda k: {"record": "All forecasts (baseline + live)", "live": "Live only"}.get(k, f"Rerun: {k}"))
+    t0s = sorted(f"{pd.Timestamp(t):%Y-%m-%dT%H}" if set_ != "record" else t for t in sets[set_])
     lab = lambda t: f"{pd.Timestamp(t):%Y-%m-%d %H}:00 UTC"
     with c2:
         t_from = st.selectbox("From cycle", t0s, index=max(0, len(t0s) - 28), format_func=lab)
@@ -675,8 +724,12 @@ def analysis_tab():
                 obs = obs.resample("1h").first() if var == "wind_dir" else obs.resample("1h").mean()
     unit, scale = {"wl": ("cm", 100.0), "wind_ms": ("m/s", 1.0), "wind_dir": ("°", 1.0), "pressure_hpa": ("hPa", 1.0), "rain_mmh": ("mm/h", 1.0)}[var]
     rows, pairs = [], []
+    from concurrent.futures import ThreadPoolExecutor
+    _keys = [(RECORD.get(t0, "live") if set_ == "record" else set_, f"{pd.Timestamp(t0):%Y%m%dT%H}") for t0 in sel]   # archive files are <YYYYMMDDTHH>.json
+    with st.spinner(f"Loading {len(sel)} cycles…"), ThreadPoolExecutor(max_workers=12) as ex:
+        _recs = dict(zip(sel, ex.map(lambda k: archive_cycle(*k), _keys)))
     for t0 in sel:
-        rec = archive_cycle(set_, t0)
+        rec = _recs.get(t0)
         if not rec:
             continue
         key = "forecast" if run_ == "Forecast" else "nowcast"
@@ -772,11 +825,11 @@ def analysis_tab():
 
 
 
-with tab_an:
+if view == "Analysis":
     unit_ = unit
     analysis_tab()
 
-with tab_about:
+if view == "About":
     st.markdown("## What this is")
     st.markdown("A compound-flood forecast for South Park on the Duwamish River in Seattle, run for Seattle Public Utilities by The Water Institute. "
                 "The model is SFINCS, a fast hydrodynamic model of the lower Duwamish and Green River from Elliott Bay to Auburn, on cells of 12.5 to 50 m "
