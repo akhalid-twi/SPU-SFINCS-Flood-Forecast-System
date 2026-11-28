@@ -678,15 +678,15 @@ def analysis_tab():
         st.info("The analysis archive appears once the publisher on Rougarou has been updated.")
         return
     sets = {k: v for k, v in idx["sets"].items() if v}
-    rec_t0 = record_cycles(idx["sets"], [])
-    sets = {"record": sorted(rec_t0), **sets}
+    sets = {"record": sorted(record_cycles(idx["sets"], []))}   # one record: GPU reforecasts + live GPU cycles
     hwc_m = idx.get("hwc_m", cfg.get("hwc_m", 0.0))
     st.markdown("## Forecast analysis")
     st.caption("Skill of one forecast cycle or a range of cycles against observations: water level at the gauges (NOAA, USGS, fetched live), "
-               "wind, pressure and rain at Boeing Field (NWS KBFI). Choose the lead times to score, e.g. 0–24 h for the next day.")
-    c1, c2, c3 = st.columns([1.2, 1.6, 1.6])
-    with c1:
-        set_ = st.selectbox("Set", list(sets), format_func=lambda k: {"record": "All forecasts (baseline + live)", "live": "Live only"}.get(k, f"Rerun: {k}"))
+               "wind, pressure and rain at Boeing Field (NWS KBFI). All cycles run on the GPU with the NOAA tide + STOFS surge boundary "
+               "(Nov 12–26 reforecast with the data available at the time, then the live cycles). Each cycle is scored on its forecast "
+               "from the cycle time up to the latest observation; fix the lead window (e.g. 0–48 h) to compare cycles like for like.")
+    set_ = "record"
+    c2, c3 = st.columns(2)
     t0s = sorted(f"{pd.Timestamp(t):%Y-%m-%dT%H}" if set_ != "record" else t for t in sets[set_])
     lab = lambda t: f"{pd.Timestamp(t):%Y-%m-%d %H}:00 UTC"
     with c2:
