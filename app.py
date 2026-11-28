@@ -332,6 +332,17 @@ def observed_now(ser: dict, name: str, t0) -> pd.Series:
     return out[~out.index.duplicated(keep="last")]
 
 
+SPINUP = pd.Timedelta("24h")   # first part of a cold-started nowcast: the river is still filling or draining
+
+
+def spun_up(m: pd.Series) -> pd.Series:
+    """A nowcast without its spin-up. Cold starts run 72 h (warm continuations 6-12 h), so a nowcast longer than
+    30 h is a cold start and its first 24 h are dropped."""
+    if len(m) and m.index.max() - m.index.min() > pd.Timedelta("30h"):
+        return m[m.index >= m.index.min() + SPINUP]
+    return m
+
+
 def ts(points) -> pd.Series:
     if not points:
         return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
@@ -405,6 +416,12 @@ def wl_chart(ser, name, title, unit, t0, cfg):
                 s = s + corr
             if key == "observed":   # points: the model line stays visible through them, peaks are not hidden
                 fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, mode="markers", marker=dict(color=col, size=3.5, opacity=0.7)))
+            elif key == "catchup" and len(spun_up(s)) < len(s):   # cold start: spin-up faded
+                sp = s[s.index <= spun_up(s).index.min()]
+                fig.add_trace(go.Scatter(x=sp.index, y=sp.values * F, name="Nowcast spin-up (cold start)", mode="lines",
+                                         line=dict(color=col, width=1.2), opacity=0.25, showlegend=False, hoverinfo="skip"))
+                s2 = spun_up(s)
+                fig.add_trace(go.Scatter(x=s2.index, y=s2.values * F, name=label, mode="lines", line=dict(color=col, width=w)))
             else:
                 fig.add_trace(go.Scatter(x=s.index, y=s.values * F, name=label, mode="lines", line=dict(color=col, width=w)))
     # thresholds as shaded bands (AHPS style): each band runs from its level up to the next one, the top one to the chart top.
@@ -749,7 +766,7 @@ def analysis_tab():
         if key == "forecast":
             m = m[(m.index >= T + pd.Timedelta(hours=lead[0])) & (m.index <= T + pd.Timedelta(hours=lead[1]))]
         else:
-            m = m[m.index < T]
+            m = spun_up(m[m.index < T]) if var == "wl" else m[m.index < T]
         if var == "rain_mmh":
             m = m.resample("1h").mean().rolling("3h").sum().reindex(obs.index, method="nearest", tolerance=pd.Timedelta("40min")) / 3.0 if len(obs) else m
         o = obs.reindex(m.index, method="nearest", tolerance=pd.Timedelta("10min" if var == "wl" else "40min")) if len(obs) else pd.Series(index=m.index, dtype=float)
