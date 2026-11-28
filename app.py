@@ -723,7 +723,7 @@ def analysis_tab():
             elif len(obs):
                 obs = obs.resample("1h").first() if var == "wind_dir" else obs.resample("1h").mean()
     unit, scale = {"wl": ("cm", 100.0), "wind_ms": ("m/s", 1.0), "wind_dir": ("°", 1.0), "pressure_hpa": ("hPa", 1.0), "rain_mmh": ("mm/h", 1.0)}[var]
-    rows, pairs = [], []
+    rows, pairs, windows = [], [], []
     from concurrent.futures import ThreadPoolExecutor
     _keys = [(RECORD.get(t0, "live") if set_ == "record" else set_, f"{pd.Timestamp(t0):%Y%m%dT%H}") for t0 in sel]   # archive files are <YYYYMMDDTHH>.json
     with st.spinner(f"Loading {len(sel)} cycles…"), ThreadPoolExecutor(max_workers=12) as ex:
@@ -761,6 +761,7 @@ def analysis_tab():
             row["within_4cm"] = float((e.abs() <= 0.04).mean())
         rows.append(row)
         pairs.append(pd.DataFrame({"model": m, "obs": o}).dropna().assign(cycle=t0))
+        windows.append((t0, m))
     df = pd.DataFrame(rows)
     good = df[(df.n >= 6) & (df.coverage >= 0.5)] if len(df) and "mae" in df else df.iloc[:0]
     if var == "rain_mmh" and good.empty and len(df):
@@ -795,6 +796,34 @@ def analysis_tab():
                         paper_bgcolor="white", plot_bgcolor="white", xaxis=dict(gridcolor="#f2f2f7"), yaxis=dict(gridcolor="#f2f2f7"), font=dict(family=FONT))
         with c:
             st.plotly_chart(f, width="stretch", config=dict(displaylogo=False))
+    # time series: observations and each cycle's forecast over the chosen lead window
+    if windows:
+        st.markdown("**Time series: observed and each cycle's forecast over the selected lead window**")
+        sc_ = (FT if unit_ == "ft" else 1.0) if var == "wl" else 1.0
+        ax_unit = ("ft NAVD88" if unit_ == "ft" else "m NAVD88") if var == "wl" else unit
+        f = go.Figure()
+        t_lo, t_hi = min(w.index.min() for _, w in windows), max(w.index.max() for _, w in windows)
+        ob = obs[t_lo:t_hi] if len(obs) else obs
+        if len(ob):
+            f.add_trace(go.Scatter(x=ob.index, y=ob.values * sc_, name="Observed", mode="markers",
+                                   marker=dict(color=C["obs"], size=3.5, opacity=0.75)))
+        n = len(windows)
+        for i, (t0, w) in enumerate(windows):
+            # one hue, light (oldest) to dark (newest): vermillion ramp
+            frac = 0.25 + 0.75 * (i / max(1, n - 1))
+            col = f"rgba(213, 94, 0, {frac:.2f})"
+            f.add_trace(go.Scatter(x=w.index, y=w.values * sc_, name=lab(t0), mode="markers" if var == "wind_dir" else "lines",
+                                   line=dict(color=col, width=1.4), marker=dict(color=col, size=3),
+                                   showlegend=False, hovertemplate=f"cycle {lab(t0)}<br>%{{x|%b %d %H:%M}}: %{{y:.2f}} {ax_unit}<extra></extra>"))
+        f.add_trace(go.Scatter(x=[None], y=[None], mode="lines", line=dict(color="rgba(213, 94, 0, 0.9)", width=2),
+                               name=f"Forecasts, {n} cycles (darker = newer), lead {lead[0]}–{lead[1]} h" if run_ == "Forecast" else f"Nowcasts, {n} cycles"))
+        if var == "wl" and stn in ("USGS_12113415",):
+            for v, labl, col in ((cfg["minor_m"], "minor", NWS["minor"]), (cfg["major_m"], "major", NWS["major"])):
+                f.add_hline(y=v * sc_, line=dict(color=col, width=1, dash="dash"), opacity=0.7)
+        f.update_layout(height=380, margin=dict(l=10, r=20, t=10, b=10), paper_bgcolor="white", plot_bgcolor="white", hovermode="closest",
+                        legend=dict(orientation="h", y=1.08, x=0, font=dict(size=12)), xaxis=dict(gridcolor="#f2f2f7"),
+                        yaxis=dict(title=ax_unit, gridcolor="#f2f2f7"), font=dict(family=FONT, color="#1d1d1f"))
+        st.plotly_chart(f, width="stretch", config=dict(displaylogo=False))
     # scatter of all pairs
     allp = pd.concat(pairs) if pairs else pd.DataFrame(columns=["model", "obs"])
     allp = allp.dropna()
@@ -803,11 +832,11 @@ def analysis_tab():
         if len(allp):
             sc = 1.0 if var != "wl" else FT if unit_ == "ft" else 1.0
             pm = pair_metrics(allp.model, allp.obs, circular=var == "wind_dir")
-            st.markdown(f"**Points:** {len(allp):,} · **MAE:** {pm.get('mae', np.nan) * scale:.1f} {unit} · **bias:** {pm.get('bias', np.nan) * scale:+.1f} {unit}"
+            st.markdown(f"**Matched values:** {len(allp):,} · **MAE:** {pm.get('mae', np.nan) * scale:.1f} {unit} · **bias:** {pm.get('bias', np.nan) * scale:+.1f} {unit}"
                         + (f" · **R²:** {pm['r2']:.3f}" if "r2" in pm else ""))
             sample = allp.sample(min(len(allp), 20000), random_state=0)
             ax_unit = ("ft NAVD88" if unit_ == "ft" else "m NAVD88") if var == "wl" else unit
-            f = go.Figure(go.Scattergl(x=sample.obs * sc, y=sample.model * sc, mode="markers", marker=dict(size=4, color=C["blue"], opacity=0.45), name="pairs"))
+            f = go.Figure(go.Scattergl(x=sample.obs * sc, y=sample.model * sc, mode="markers", marker=dict(size=4, color=C["blue"], opacity=0.45), name="matched values"))
             lo_, hi_ = float(min(sample.obs.min(), sample.model.min()) * sc), float(max(sample.obs.max(), sample.model.max()) * sc)
             f.add_trace(go.Scatter(x=[lo_, hi_], y=[lo_, hi_], mode="lines", line=dict(color="#8e8e93", dash="dash"), name="1:1"))
             f.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="white", plot_bgcolor="white",
@@ -816,12 +845,18 @@ def analysis_tab():
             st.plotly_chart(f, width="stretch", config=dict(displaylogo=False))
     with cB:
         st.markdown("**By forecast cycle**")
-        show = good.copy()
-        show["coverage"] = (show.coverage * 100).round(0).astype(int).astype(str) + "%"
+        show = good.drop(columns=["coverage"]).copy()
         if "within_4cm" in show:
             show["within_4cm"] = (show.within_4cm * 100).round(0).astype(int).astype(str) + "%"
-        ren = {"mae": f"MAE {unit}", "bias": f"bias {unit}", "rmse": f"RMSE {unit}", "r2": "R²", "within_4cm": "within 4 cm", "n": "pairs"}
+        ren = {"mae": f"MAE {unit}", "bias": f"bias {unit}", "rmse": f"RMSE {unit}", "r2": "R²", "within_4cm": "within 4 cm", "n": "matched values"}
         st.dataframe(show.iloc[::-1].rename(columns=ren).round(3), hide_index=True, width="stretch", height=430)
+        step = "15-minute" if var == "wl" else ("3-hour" if var == "rain_mmh" else "hourly")
+        st.caption(f"A matched value is one {step} {'forecast' if run_ == 'Forecast' else 'nowcast'} value and the observation at the same time "
+                   f"(within {'10 min' if var == 'wl' else '40 min'}), inside the lead window and up to the latest observation. "
+                   "All errors are model minus observed.")
+        gaps = good[good.coverage < 0.9]
+        if len(gaps):
+            st.caption("Observations incomplete (under 90% of the elapsed forecast) for: " + ", ".join(gaps.cycle) + ".")
 
 
 
