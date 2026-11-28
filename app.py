@@ -149,10 +149,14 @@ def live_obs(name: str, t0: str, t1: str) -> pd.Series:
     a, b = pd.Timestamp(t0), pd.Timestamp(t1)
     try:
         if src[0] == "coops":
-            d = requests.get("https://api.tidesandcurrents.noaa.gov/api/prod/datagetter", timeout=30, params=dict(
-                product="water_level", datum="NAVD", units="metric", time_zone="gmt", format="json", application="spu_flood_dashboard",
-                station=src[1], begin_date=f"{a:%Y%m%d %H:%M}", end_date=f"{b:%Y%m%d %H:%M}")).json()
-            return pd.Series({pd.Timestamp(r["t"]): float(r["v"]) for r in d.get("data", []) if r.get("v") not in ("", None)}, dtype=float).sort_index()
+            parts = []
+            for s0 in pd.date_range(a, b, freq="30D"):            # CO-OPS serves 6-min data 31 days at a time
+                d = requests.get("https://api.tidesandcurrents.noaa.gov/api/prod/datagetter", timeout=30, params=dict(
+                    product="water_level", datum="NAVD", units="metric", time_zone="gmt", format="json", application="spu_flood_dashboard",
+                    station=src[1], begin_date=f"{s0:%Y%m%d %H:%M}", end_date=f"{min(s0 + pd.Timedelta('30D'), b):%Y%m%d %H:%M}")).json()
+                parts.append(pd.Series({pd.Timestamp(r["t"]): float(r["v"]) for r in d.get("data", []) if r.get("v") not in ("", None)}, dtype=float))
+            out = pd.concat(parts) if parts else pd.Series(dtype=float)
+            return out[~out.index.duplicated()].sort_index()
         datum = usgs_datum_ft(src[1])
         d = requests.get("https://waterservices.usgs.gov/nwis/iv/", timeout=60, params=dict(
             format="json", sites=src[1], parameterCd="00065", startDT=f"{a:%Y-%m-%dT%H:%MZ}", endDT=f"{b:%Y-%m-%dT%H:%MZ}")).json()
@@ -483,7 +487,7 @@ with c_ctl:
             st.rerun()
 st.caption(f"Cycles at {', '.join(f'{h:02d}z' for h in cfg['hours'])} UTC · thresholds at USGS 12113415: minor {cfg['minor_m'] * FT:.2f} ft, "
            f"major {cfg['major_m'] * FT:.2f} ft NAVD88 · snapshot {local(status['updated'], tz)}")
-tab_over, tab_fc, tab_map, tab_jobs, tab_about = st.tabs(["Overview", "Forecast", "Stations", "Jobs & logs", "About"])
+tab_over, tab_fc, tab_an, tab_map, tab_jobs, tab_about = st.tabs(["Overview", "Forecast", "Analysis", "Stations", "Jobs & logs", "About"])
 
 with tab_over:
     if not recs:
@@ -596,6 +600,181 @@ with tab_jobs:
         if logs.get("run.json"):
             with st.expander("Forecast inputs (run.json)"):
                 st.json(logs["run.json"])
+
+# ------------------------------------------------------------------ analysis (skill over one or many cycles)
+AN_VARS = {"Water level": "wl", "Wind speed": "wind_ms", "Wind direction": "wind_dir", "Pressure": "pressure_hpa", "Rain": "rain_mmh"}
+AN_STATIONS = {"South Park, USGS 12113415": "USGS_12113415", "Seattle, NOAA 9447130": "Seattle_bay",
+               "Tukwila Golf Course, USGS 12113390": "USGS_12113390", "Kent, USGS 12113344": "USGS_12113344"}
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def archive_cycle(set_: str, t0: str):
+    return fetch_json(f"archive/{set_}/{t0}.json")
+
+
+def pair_metrics(m: pd.Series, o: pd.Series, circular=False) -> dict:
+    p = pd.concat({"m": m, "o": o}, axis=1).dropna()
+    if len(p) < 6:
+        return {"n": len(p)}
+    e = p.m - p.o
+    if circular:
+        e = (e + 180) % 360 - 180
+        return {"n": len(p), "mae": float(e.abs().mean()), "bias": float(e.mean()), "rmse": float(np.sqrt((e ** 2).mean()))}
+    ss = float(((p.o - p.o.mean()) ** 2).sum())
+    return {"n": len(p), "mae": float(e.abs().mean()), "bias": float(e.mean()), "rmse": float(np.sqrt((e ** 2).mean())),
+            "r2": float(1 - (e ** 2).sum() / ss) if ss > 0 else np.nan}
+
+
+def analysis_tab():
+    idx = fetch_json("archive/index.json")
+    if not idx or not idx.get("sets"):
+        st.info("The analysis archive appears once the publisher on Rougarou has been updated.")
+        return
+    sets = {k: v for k, v in idx["sets"].items() if v}
+    hwc_m = idx.get("hwc_m", cfg.get("hwc_m", 0.0))
+    st.markdown("## Forecast analysis")
+    st.caption("Skill of one forecast cycle or a range of cycles against observations: water level at the gauges (NOAA, USGS, fetched live), "
+               "wind, pressure and rain at Boeing Field (NWS KBFI). Choose the lead times to score, e.g. 0–24 h for the next day.")
+    c1, c2, c3 = st.columns([1.2, 1.6, 1.6])
+    with c1:
+        set_ = st.selectbox("Set", list(sets), format_func=lambda k: {"live": "Live forecasts"}.get(k, f"Rerun: {k}"))
+    t0s = sorted(sets[set_])
+    lab = lambda t: f"{pd.Timestamp(t):%Y-%m-%d %H}:00 UTC"
+    with c2:
+        t_from = st.selectbox("From cycle", t0s, index=max(0, len(t0s) - 28), format_func=lab)
+    with c3:
+        t_to = st.selectbox("To cycle", t0s, index=len(t0s) - 1, format_func=lab)
+    c4, c5, c6, c7 = st.columns([1.2, 1.6, 1.0, 1.6])
+    with c4:
+        var_lab = st.selectbox("Variable", list(AN_VARS))
+    var = AN_VARS[var_lab]
+    with c5:
+        stn_lab = st.selectbox("Station", list(AN_STATIONS) if var == "wl" else ["Boeing Field, NWS KBFI"])
+    with c6:
+        run_ = st.radio("Run", ["Forecast", "Nowcast"], horizontal=True)
+    with c7:
+        lead = st.slider("Forecast lead (h)", 0, 168, (0, 168), step=6, disabled=run_ == "Nowcast")
+    sel = [t for t in t0s if t_from <= t <= t_to]
+    if not sel:
+        st.warning("The From cycle is after the To cycle.")
+        return
+    stn = AN_STATIONS.get(stn_lab)
+    # observations over the whole range, fetched once
+    first, last = pd.Timestamp(sel[0]) - pd.Timedelta("3D"), min(pd.Timestamp.utcnow().tz_localize(None), pd.Timestamp(sel[-1]) + pd.Timedelta("7D"))
+    with st.spinner("Fetching observations…"):
+        if var == "wl":
+            obs = live_obs(stn, str(first.floor("1h")), str(last.floor("5min")))
+            obs = obs.resample("15min").mean().dropna() if len(obs) else obs
+        else:
+            k = kbfi_obs(str(first), str(last))
+            col = {"rain_mmh": "rain3h_mm"}.get(var, var)
+            obs = k[col].dropna() if len(k) and col in k else pd.Series(dtype=float)
+            if var == "rain_mmh" and len(obs):
+                obs = obs / 3.0                       # 3-h totals -> mean rate
+            elif len(obs):
+                obs = obs.resample("1h").first() if var == "wind_dir" else obs.resample("1h").mean()
+    unit, scale = {"wl": ("cm", 100.0), "wind_ms": ("m/s", 1.0), "wind_dir": ("°", 1.0), "pressure_hpa": ("hPa", 1.0), "rain_mmh": ("mm/h", 1.0)}[var]
+    rows, pairs = [], []
+    for t0 in sel:
+        rec = archive_cycle(set_, t0)
+        if not rec:
+            continue
+        key = "forecast" if run_ == "Forecast" else "nowcast"
+        if var == "wl":
+            m = ts(rec.get(key, {}).get(stn))
+            if stn == "USGS_12113415" and key == "forecast":
+                m = m + hwc_m
+        else:
+            m = ts((rec.get("forcing", {}).get(key) or {}).get(var))
+        if m.empty:
+            continue
+        T = pd.Timestamp(t0)
+        if key == "forecast":
+            m = m[(m.index >= T + pd.Timedelta(hours=lead[0])) & (m.index <= T + pd.Timedelta(hours=lead[1]))]
+        else:
+            m = m[m.index < T]
+        if var == "rain_mmh":
+            m = m.resample("1h").mean().rolling("3h").sum().reindex(obs.index, method="nearest", tolerance=pd.Timedelta("40min")) / 3.0 if len(obs) else m
+        o = obs.reindex(m.index, method="nearest", tolerance=pd.Timedelta("10min" if var == "wl" else "40min")) if len(obs) else pd.Series(index=m.index, dtype=float)
+        past = m[m.index <= obs.index.max()] if len(obs) else m.iloc[:0]
+        met = pair_metrics(m, o, circular=var == "wind_dir")
+        cov = met.get("n", 0) / max(1, len(past))
+        row = {"cycle": lab(t0), "n": met.get("n", 0), "coverage": cov}
+        for k in ("mae", "bias", "rmse", "r2"):
+            if k in met:
+                row[k] = met[k] * (scale if k != "r2" else 1)
+        if var == "wl" and met.get("n", 0):
+            e = (m - o).dropna()
+            row["within_4cm"] = float((e.abs() <= 0.04).mean())
+        rows.append(row)
+        pairs.append(pd.DataFrame({"model": m, "obs": o}).dropna().assign(cycle=t0))
+    df = pd.DataFrame(rows)
+    good = df[(df.n >= 6) & (df.coverage >= 0.5)] if len(df) and "mae" in df else df.iloc[:0]
+    if var == "rain_mmh" and good.empty and len(df):
+        st.info("Too few rain reports to score: Boeing Field reports rain only as 3-hour totals, and only when it rains. Choose a longer range of cycles.")
+        return
+    if good.empty:
+        st.info("No scored cycles yet in this range: the forecasts have to be in the past to be compared with observations.")
+        return
+    # aggregated statistics
+    st.markdown(f"**{stn_lab} · {var_lab} · {run_.lower()}{'' if run_ == 'Nowcast' else f', lead {lead[0]}–{lead[1]} h'} · {len(good)} of {len(df)} cycles scored**")
+    tiles = [("Cycles scored", f"{len(good)} / {len(df)}", "≥50% of the elapsed forecast observed"),
+             (f"MAE, mean", f"{good.mae.mean():.1f} {unit}", f"median {good.mae.median():.1f} {unit}"),
+             ("Best cycle", f"{good.mae.min():.1f} {unit}", good.loc[good.mae.idxmin(), "cycle"]),
+             ("Worst cycle", f"{good.mae.max():.1f} {unit}", good.loc[good.mae.idxmax(), "cycle"])]
+    if "r2" in good:
+        tiles.append(("R², mean", f"{good.r2.mean():.3f}", f"median {good.r2.median():.3f}"))
+    if "within_4cm" in good:
+        tiles.append(("Within 4 cm", f"{good.within_4cm.mean() * 100:.0f}%", "of all paired values (client target)"))
+    st.markdown('<div class="tiles">' + "".join(f'<div class="card tile">{metric(k, v, s_)}</div>' for k, v, s_ in tiles[:4]) + '</div>', unsafe_allow_html=True)
+    if len(tiles) > 4:
+        st.markdown('<div class="tiles">' + "".join(f'<div class="card tile">{metric(k, v, s_)}</div>' for k, v, s_ in tiles[4:]) + '</div>', unsafe_allow_html=True)
+    # metrics by cycle
+    x = pd.to_datetime(good.cycle.str.replace(" UTC", ""))
+    figs = [("mae", f"MAE ({unit})")] + ([("r2", "R²")] if "r2" in good else []) + ([("within_4cm", "Within 4 cm (%)")] if "within_4cm" in good else []) + ([("bias", f"Bias ({unit})")])
+    cols = st.columns(len(figs))
+    for c, (k, t) in zip(cols, figs):
+        y = good[k] * (100 if k == "within_4cm" else 1)
+        f = go.Figure(go.Scatter(x=x, y=y, mode="lines+markers", line=dict(color=C["blue"], width=2), marker=dict(size=4)))
+        if k == "mae" and var == "wl":
+            f.add_hline(y=4, line=dict(color=C["red"], dash="dot", width=1), annotation_text="4 cm target", annotation_position="top left")
+        f.update_layout(title=dict(text=f"{t} by forecast cycle", font=dict(size=13)), height=260, margin=dict(l=10, r=10, t=40, b=10),
+                        paper_bgcolor="white", plot_bgcolor="white", xaxis=dict(gridcolor="#f2f2f7"), yaxis=dict(gridcolor="#f2f2f7"), font=dict(family=FONT))
+        with c:
+            st.plotly_chart(f, width="stretch", config=dict(displaylogo=False))
+    # scatter of all pairs
+    allp = pd.concat(pairs) if pairs else pd.DataFrame(columns=["model", "obs"])
+    allp = allp.dropna()
+    cA, cB = st.columns([1, 1.3])
+    with cA:
+        if len(allp):
+            sc = 1.0 if var != "wl" else FT if unit_ == "ft" else 1.0
+            pm = pair_metrics(allp.model, allp.obs, circular=var == "wind_dir")
+            st.markdown(f"**Points:** {len(allp):,} · **MAE:** {pm.get('mae', np.nan) * scale:.1f} {unit} · **bias:** {pm.get('bias', np.nan) * scale:+.1f} {unit}"
+                        + (f" · **R²:** {pm['r2']:.3f}" if "r2" in pm else ""))
+            sample = allp.sample(min(len(allp), 20000), random_state=0)
+            ax_unit = ("ft NAVD88" if unit_ == "ft" else "m NAVD88") if var == "wl" else unit
+            f = go.Figure(go.Scattergl(x=sample.obs * sc, y=sample.model * sc, mode="markers", marker=dict(size=4, color=C["blue"], opacity=0.45), name="pairs"))
+            lo_, hi_ = float(min(sample.obs.min(), sample.model.min()) * sc), float(max(sample.obs.max(), sample.model.max()) * sc)
+            f.add_trace(go.Scatter(x=[lo_, hi_], y=[lo_, hi_], mode="lines", line=dict(color="#8e8e93", dash="dash"), name="1:1"))
+            f.update_layout(height=430, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="white", plot_bgcolor="white",
+                            xaxis=dict(title=f"Observed ({ax_unit})", gridcolor="#f2f2f7"), yaxis=dict(title=f"Model ({ax_unit})", gridcolor="#f2f2f7", scaleanchor="x"),
+                            legend=dict(orientation="h", y=1.05, x=0), font=dict(family=FONT))
+            st.plotly_chart(f, width="stretch", config=dict(displaylogo=False))
+    with cB:
+        st.markdown("**By forecast cycle**")
+        show = good.copy()
+        show["coverage"] = (show.coverage * 100).round(0).astype(int).astype(str) + "%"
+        if "within_4cm" in show:
+            show["within_4cm"] = (show.within_4cm * 100).round(0).astype(int).astype(str) + "%"
+        ren = {"mae": f"MAE {unit}", "bias": f"bias {unit}", "rmse": f"RMSE {unit}", "r2": "R²", "within_4cm": "within 4 cm", "n": "pairs"}
+        st.dataframe(show.iloc[::-1].rename(columns=ren).round(3), hide_index=True, width="stretch", height=430)
+
+
+
+with tab_an:
+    unit_ = unit
+    analysis_tab()
 
 with tab_about:
     st.markdown("## What this is")
